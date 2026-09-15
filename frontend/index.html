@@ -30,6 +30,19 @@
       <input type="email" id="emailUsuario" placeholder="Seu e-mail">
     </div>
 
+    <!-- ✅ CAMPOS DO BOLETO (preenchidos pelo OCR) -->
+    <div id="camposBoleto" class="oculto">
+      <hr>
+      <h3>📄 Dados do Boleto</h3>
+      <input type="number" id="valorOriginal" placeholder="Valor Original" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
+      <input type="date" id="dataVencimento" placeholder="Data de Vencimento" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
+      <input type="number" id="diasVencidos" placeholder="Dias Vencidos" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
+      <input type="number" id="juros" placeholder="Juros" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
+      <input type="number" id="multa" placeholder="Multa" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
+      <input type="number" id="taxa" placeholder="Taxa de Serviço" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
+      <input type="number" id="valorFinal" placeholder="Valor Total (R$)" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px;font-weight:bold;background:#E8F0F8">
+    </div>
+
     <button id="btn" disabled>🔍 Processar Boleto</button>
     <div id="res" class="oculto"></div>
   </div>

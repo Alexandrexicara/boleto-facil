@@ -1,16 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const tesseract = require('node-tesseract-ocr');
+
+// ✅ UPLOAD CONFIGURADO EXATAMENTE COMO FUNCIONAVA NO INÍCIO
 const upload = multer({ storage: multer.memoryStorage() });
 
-// ✅ REGRAS OFICIAIS — SEM DADOS FIXOS!
 const REGRAS = {
   JUROS_DIA: 0.01 / 30,
   MULTA: 0.02,
   TAXA_SERVICO: 4.90
 };
 
-// ✅ CALCULA DIAS VENCIDOS
 function diasVencidos(dataVenc) {
   const hoje = new Date();
   const venc = new Date(dataVenc);
@@ -18,7 +19,6 @@ function diasVencidos(dataVenc) {
   return diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0;
 }
 
-// ✅ CALCULA VALORES
 function calcularValorFinal(valorOriginal, dataVenc) {
   const dias = diasVencidos(dataVenc);
   const juros = valorOriginal * REGRAS.JUROS_DIA * dias;
@@ -27,81 +27,100 @@ function calcularValorFinal(valorOriginal, dataVenc) {
   return { dias, juros, multa, taxa: REGRAS.TAXA_SERVICO, total };
 }
 
-// ✅ ROTA DE LEITURA — SEM DADOS FIXOS! VAI LER DE VERDADE!
+// ✅ FUNÇÃO: LER CÓDIGO DE BARRAS USANDO OCR REAL
+async function extrairCodigoBarrasOCR(buffer) {
+  try {
+    const tempPath = '/tmp/boleto-' + Date.now() + '.png';
+    require('fs').writeFileSync(tempPath, buffer);
+    
+    tesseract
+      .recognize(tempPath, {
+        lang: 'por',
+        oem: 3,
+        psm: 6,
+        timeout: 10000
+      })
+      .then((text) => {
+        require('fs').unlinkSync(tempPath);
+        
+        // ✅ EXTRAIR os 44 dígitos do código de barras FEBRABAN
+        // Padrão: os dígitos normalmente estão na região do código de barras
+        const codigoMatch = text.match(/\\d{44}/);
+        if (codigoMatch && codigoMatch[0].length === 44) {
+          return codigoMatch[0];
+        }
+        
+        // ✅ Tentar encontrar qualquer sequência de 44 dígitos
+        const allNumbers = text.replace(/\D/g, '');
+        if (allNumbers.length >= 44) {
+          return allNumbers.substring(0, 44);
+        }
+        
+        return null;
+      })
+      .catch((erro) => {
+        require('fs').unlinkSync(tempPath);
+        console.error('❌ Erro OCR:', erro.message);
+        return null;
+      });
+  } catch (erro) {
+    console.error('❌ Erro ao processar OCR:', erro.message);
+    return null;
+  }
+}
+
+// ✅ ROTA DE UPLOAD — COM LEITOR REAL DE CÓDIGO DE BARRAS
 router.post('/ler', upload.single('foto'), async (req, res) => {
   try {
-    if (!req.file) return res.json({erro: 'Envie a foto do boleto!'});
+    // ✅ MOSTRA NO TERMINAL SE A FOTO CHEGOU
+    console.log('══════════════════════════════════════════════════');
+    console.log('📸 FOTO:', req.file ? '✅ CHEGOU! Tamanho: ' + req.file.size + ' bytes' : '❌ NÃO CHEGOU!');
+    console.log('══════════════════════════════════════════════════');
 
-    // ⚠️ AQUI VAI ENTRAR O LEITOR REAL DE CÓDIGO DE BARRAS
-    // ENQUANTO ISSO, EXTRAÍ DO PRÓPRIO CÓDIGO DE BARRAS
-    const codigoBarras = extrairCodigoBarrasDaImagem(req.file.buffer);
+    let codigoBarras = '';
     
-    if (!codigoBarras || codigoBarras.length !== 44) {
-      return res.json({
-        erro: '❌ Não consegui ler o código de barras!\n\nTire a foto mais nítida, bem alinhado, sem sombra e sem reflexo.'
+    // ✅ TENTAR LER COM OCR PRIMEIRO
+    if (req.file) {
+      codigoBarras = await extrairCodigoBarrasOCR(req.file.buffer);
+    }
+    
+    // ✅ SE OCR falhar, pedir para usuário digitar manualmente
+    if (!codigoBarras) {
+      return res.json({ 
+        erro: 'Não consegui ler o código de barras da imagem. '
+      + 'Por favor, digite os 44 números do código de barras manualmente.'
+      + '<br><input type="text" id="codigoManual" maxlength="44" style="padding:10px;width:100%;margin:10px 0;">'
+      + '<button onclick="document.getElementById(\'codigoManual\').focus()" style="padding:8px 15px">Focar para digitar</button>'
       });
     }
-
-    // ✅ EXTRAI VALOR E VENCIMENTO DO PRÓPRIO CÓDIGO DE BARRAS
-    const dados = extrairDadosDoCodigoBarras(codigoBarras);
-    if (!dados) {
-      return res.json({erro: '❌ Código de barras inválido ou não reconhecido!'});
+    
+    if (!codigoBarras || codigoBarras.length !== 44) {
+      return res.json({ erro: 'Digite os 44 números do código de barras!' });
     }
 
-    // ✅ CALCULA TUDO
+    const dados = extrairDadosDoCodigoBarras(codigoBarras);
+    if (!dados) {
+      return res.json({ erro: 'Código de barras inválido!' });
+    }
+
     const calc = calcularValorFinal(dados.valor, dados.vencimento);
 
     res.json({
       sucesso: true,
-      codigoBarras: codigoBarras,
+      codigoRecebido: codigoBarras,
       valorOriginal: dados.valor,
       dataVencimento: dados.vencimentoFormatado,
       diasVencidos: calc.dias,
       juros: calc.juros,
       multa: calc.multa,
       taxaServico: calc.taxa,
-      valorFinal: calc.total,
-      mensagem: calc.dias > 0 
-        ? `⚠️ Vencido há ${calc.dias} dias. Juros e multa aplicados.`
-        : '✅ Conta dentro do vencimento. Sem acréscimos.'
+      valorFinal: calc.total
     });
 
   } catch (erro) {
-    console.error('❌ Erro:', erro.message);
-    res.json({erro: 'Erro ao ler: ' + erro.message});
+    console.error('❌ ERRO:', erro.message);
+    res.json({ erro: 'Erro: ' + erro.message });
   }
 });
-
-// ✅ FUNÇÃO: INTERPRETA CÓDIGO DE BARRAS PADRÃO FEBRABAN
-function extrairDadosDoCodigoBarras(codigo) {
-  try {
-    // Código: 44 dígitos — Padrão Febraban
-    const campoValor = codigo.substring(9, 19);
-    const valor = parseInt(campoValor) / 100;
-
-    const campoVenc = codigo.substring(33, 43);
-    const fator = parseInt(campoVenc);
-    
-    // ✅ CALCULA DATA PELO FATOR DE VENCIMENTO
-    const dataBase = new Date('1997-10-07');
-    const vencimento = new Date(dataBase);
-    vencimento.setDate(dataBase.getDate() + fator);
-
-    return {
-      valor: valor,
-      vencimento: vencimento.toISOString().split('T')[0],
-      vencimentoFormatado: vencimento.toLocaleDateString('pt-BR')
-    };
-  } catch {
-    return null;
-  }
-}
-
-// ✅ LEITOR — AQUI VAI O OCR REAL DEPOIS
-function extrairCodigoBarrasDaImagem(buffer) {
-  // ⚠️ AQUI VAI O LEITOR REAL DE CÓDIGO DE BARRAS
-  // POR ENQUANTO, USUÁRIO PODE DIGITAR OU EU COLOCO LEITOR
-  return null; // ← VAI RETORNAR ERRO PRA NÃO USAR DADOS FALSOS!
-}
 
 module.exports = router;
