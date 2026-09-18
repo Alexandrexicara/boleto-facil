@@ -1,131 +1,225 @@
 // ✅ INÍCIO DO APP - LEITOR DE BOLETOS COM OCR
 
 const apiBase = '/api/boleto';
+let boletoAtual = null;
 
-// Elementos do DOM
 const fotoInput = document.getElementById('foto');
 const preview = document.getElementById('preview');
 const camposUsuario = document.getElementById('camposUsuario');
+const camposBoleto = document.getElementById('camposBoleto');
 const btnProcessar = document.getElementById('btn');
 const res = document.getElementById('res');
 
-// ✅ PREVISUALIZAR IMAGEM SELECIONADA
+async function lerCodigoDeBarras(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const imagem = await new Promise((resolve, reject) => {
+      const elemento = new Image();
+      elemento.onload = () => resolve(elemento);
+      elemento.onerror = () => reject(new Error('Não foi possível carregar a foto.'));
+      elemento.src = url;
+    });
+
+    if (!window.ZXingBrowser) return null;
+
+    const leitor = new ZXingBrowser.BrowserMultiFormatReader();
+    const tentativas = [];
+    const larguraOriginal = imagem.naturalWidth;
+    const alturaOriginal = imagem.naturalHeight;
+    const escala = Math.min(1.5, 2200 / Math.max(larguraOriginal, alturaOriginal));
+
+    function adicionarCanvas(corte, altoContraste = false) {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(corte.largura * escala));
+      canvas.height = Math.max(1, Math.round(corte.altura * escala));
+      const contexto = canvas.getContext('2d', { willReadFrequently: true });
+      contexto.drawImage(
+        imagem,
+        corte.x, corte.y, corte.largura, corte.altura,
+        0, 0, canvas.width, canvas.height
+      );
+
+      if (altoContraste) {
+        const pixels = contexto.getImageData(0, 0, canvas.width, canvas.height);
+        for (let indice = 0; indice < pixels.data.length; indice += 4) {
+          const cinza = Math.round(
+            pixels.data[indice] * 0.299 +
+            pixels.data[indice + 1] * 0.587 +
+            pixels.data[indice + 2] * 0.114
+          );
+          const contraste = cinza < 160 ? 0 : 255;
+          pixels.data[indice] = contraste;
+          pixels.data[indice + 1] = contraste;
+          pixels.data[indice + 2] = contraste;
+        }
+        contexto.putImageData(pixels, 0, 0);
+      }
+      tentativas.push(canvas);
+    }
+
+    tentativas.push(imagem);
+    adicionarCanvas({ x: 0, y: 0, largura: larguraOriginal, altura: alturaOriginal });
+    adicionarCanvas({
+      x: 0,
+      y: Math.round(alturaOriginal * 0.55),
+      largura: larguraOriginal,
+      altura: Math.round(alturaOriginal * 0.45)
+    });
+    adicionarCanvas({
+      x: 0,
+      y: Math.round(alturaOriginal * 0.55),
+      largura: larguraOriginal,
+      altura: Math.round(alturaOriginal * 0.45)
+    }, true);
+
+    for (const tentativa of tentativas) {
+      try {
+        if ('BarcodeDetector' in window) {
+          try {
+            const detector = new BarcodeDetector({ formats: ['itf', 'code_128', 'codabar'] });
+            const encontrados = await detector.detect(tentativa);
+            const codigoNativo = encontrados[0]?.rawValue?.replace(/\D/g, '');
+            if (codigoNativo && [44, 47, 48].includes(codigoNativo.length)) return codigoNativo;
+          } catch (erro) {
+            console.warn('Detector nativo indisponível:', erro.message);
+          }
+        }
+
+        const resultado = tentativa instanceof HTMLCanvasElement
+          ? await leitor.decodeFromCanvas(tentativa)
+          : await leitor.decodeFromImageElement(tentativa);
+        const codigoZxing = resultado?.getText?.() || resultado?.text || '';
+        const codigo = codigoZxing.replace(/\D/g, '');
+        if (codigo && [44, 47, 48].includes(codigo.length)) return codigo;
+      } catch (erro) {
+        console.warn('Tentativa de leitura falhou:', erro.message);
+      }
+    }
+
+    return null;
+  } catch (erro) {
+    console.warn('Leitor de código de barras não encontrou um código:', erro.message);
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 fotoInput.addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
-  
-  // ✅ Mostrar preview da imagem
+
   const reader = new FileReader();
-  reader.onload = (e) => {
-    preview.innerHTML = `<img src="${e.target.result}" class="scan-image" alt="Preview do boleto">`;
+  reader.onload = (event) => {
+    preview.innerHTML = `<img src="${event.target.result}" class="scan-image" alt="Preview do boleto">`;
     preview.style.display = 'block';
   };
   reader.readAsDataURL(file);
-  
-  // ✅ Habilitar botão e processar
+
+  boletoAtual = null;
   btnProcessar.disabled = false;
+  btnProcessar.textContent = '🔍 Ler Boleto';
   res.innerHTML = '';
+  res.classList.remove('oculto');
   camposUsuario.classList.add('oculto');
+  camposBoleto.classList.add('oculto');
 });
 
-// ✅ PROCESSAR BOLETO - ENVIAR IMAGEM PARA OCR
 btnProcessar.addEventListener('click', async () => {
+  if (boletoAtual) {
+    const cpfCnpj = document.getElementById('cpfCnpj').value.trim();
+    const email = document.getElementById('emailUsuario').value.trim();
+
+    if (!cpfCnpj || !email) {
+      alert('⚠️ Informe CPF/CNPJ e e-mail antes de gerar o pagamento.');
+      return;
+    }
+
+    btnProcessar.disabled = true;
+    btnProcessar.textContent = '⏳ Gerando Pix...';
+    res.innerHTML = '⏳ Enviando pagamento real para a API...';
+
+    try {
+      await gerarPagamento(boletoAtual);
+    } finally {
+      btnProcessar.disabled = false;
+      btnProcessar.textContent = '💳 Gerar Pix';
+    }
+    return;
+  }
+
   const file = fotoInput.files[0];
   if (!file) {
     alert('📷 Por favor, selecione uma foto primeiro!');
     return;
   }
-  
+
   btnProcessar.disabled = true;
-  btnProcessar.textContent = '⏳ Processando OCR...';
-  res.innerHTML = '⏳ Analisando imagem com OCR...';
-  
-  // ✅ Enviar imagem para o backend
-  const formData = new FormData();
-  formData.append('foto', file);
-  
+  btnProcessar.textContent = '⏳ Lendo código de barras...';
+  res.innerHTML = '⏳ Lendo o código de barras automaticamente...';
+  res.classList.remove('oculto');
+
   try {
-    const resp = await fetch(`${apiBase}/ler`, {
-      method: 'POST',
-      body: formData
-    });
-    const data = await resp.json();
-    
-    btnProcessar.disabled = true;
-    btnProcessar.textContent = '🔍 Processar Boleto';
-    
-    if (data.erro) {
-      // ✅ Se OCR falhar, mostrar campo para digitar manualmente
+    const codigo = await lerCodigoDeBarras(file);
+
+    if (!codigo) {
       res.innerHTML = `
         <div style="background:#FFF3E0;border:2px solid #FFCC00;border-radius:8px;padding:20px;margin:15px 0">
-          <h4>⚠️ OCR não conseguiu ler o código de barras</h4>
-          <p>Erro: ${data.erro}</p>
-          <p>O código de barras do boleto padrão FEBRABAN tem 44 dígitos. Você pode:</p>
-          <ol>
-            <li>Tirar uma foto mais clara, bem alinhada, sem sombra e sem reflexo</li>
-            <li>Digitar o código manualmente: <input type="text" id="codigoManual" maxlength="44" style="width:100%;padding:10px;margin:10px 0;border:2px solid #CCC;border-radius:6px;font-size:16px"></li>
-            <li>Clique em "Usar código manual" quando digitar</li>
-          </ol>
-          <button onclick="lerCodigoManual()" style="background:#005BAA;color:white;border:none;padding:10px;border-radius:8px;width:100%;margin-top:10px;font-weight:bold">✏️ Usar código manual</button>
+          <h4>⚠️ Código não localizado na imagem</h4>
+          <p>Fotografe o boleto inteiro, com a linha de barras nítida, reta e sem reflexo.</p>
+          <p>O arquivo foi selecionado, mas nenhum código válido foi detectado.</p>
         </div>
       `;
       btnProcessar.disabled = false;
-      btnProcessar.textContent = '🔍 Processar Boleto';
+      btnProcessar.textContent = '🔍 Ler Boleto';
       return;
     }
-    
-    // ✅ Mostrar resultados do OCR
+
+    const formData = new FormData();
+    formData.append('foto', file);
+    formData.append('codigoBarras', codigo);
+
+    const resp = await fetch(`${apiBase}/ler`, { method: 'POST', body: formData });
+    const data = await resp.json();
+
+    if (data.erro) {
+      res.innerHTML = `
+        <div style="background:#FFF3E0;border:2px solid #FFCC00;border-radius:8px;padding:20px;margin:15px 0">
+          <h4>⚠️ Não foi possível ler o código de barras</h4>
+          <p>${data.erro}</p>
+          <p>Tire outra foto com o código inteiro visível, sem sombra ou reflexo.</p>
+        </div>
+      `;
+      btnProcessar.disabled = false;
+      btnProcessar.textContent = '🔍 Ler Boleto';
+      return;
+    }
+
     mostrarResultados(data);
   } catch (erro) {
     console.error('❌ Erro:', erro);
     res.innerHTML = `<p style="color:red">❌ Erro ao processar: ${erro.message}</p>`;
     btnProcessar.disabled = false;
-    btnProcessar.textContent = '🔍 Processar Boleto';
+    btnProcessar.textContent = '🔍 Ler Boleto';
   }
 });
 
-// ✅ LER CÓDIGO MANUALMENTE
-function lerCodigoManual() {
-  const codigo = document.getElementById('codigoManual').value.trim();
-  if (!codigo || codigo.length !== 44) {
-    alert('⚠️ Por favor, digite exatamente 44 números!');
-    return;
-  }
-  
-  // ✅ Enviar código manual para o backend
-  fetch(`${apiBase}/ler`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ codigoBarras: codigo })
-  }).then(async (resp) => {
-    const data = await resp.json();
-    if (data.sucesso) {
-      mostrarResultados(data);
-    } else {
-      alert('❌ ' + data.erro);
-    }
-  });
-}
-
-// ✅ MOSTRAR RESULTADOS NO INTERFACE
 function mostrarResultados(dados) {
+  boletoAtual = dados;
   camposUsuario.classList.remove('oculto');
-  
-  // ✅ Preencher dados automatically (pode ser editado)
-  const valorFormatado = dados.valorOriginal.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-  document.getElementById('valorOriginal').value = dados.valorOriginal;
+  camposBoleto.classList.remove('oculto');
+
+  document.getElementById('valorOriginal').value = Number(dados.valorOriginal).toFixed(2);
   document.getElementById('dataVencimento').value = dados.dataVencimento;
-  document.getElementById('diasVencidos').value = dados.diasVencidos || 0;
-  
-  // ✅ Calcular valores
-  const calc = calcularValorFinal(dados.valorOriginal, dados.dataVencimento);
-  
+  document.getElementById('diasVencidos').value = Number(dados.diasVencidos || 0);
+
+  const calc = calcularValorFinal(Number(dados.valorOriginal), dados.dataVencimento);
+
   document.getElementById('juros').value = calc.juros.toFixed(2);
   document.getElementById('multa').value = calc.multa.toFixed(2);
   document.getElementById('taxa').value = calc.taxa.toFixed(2);
   document.getElementById('valorFinal').value = calc.total.toFixed(2);
-  
-  // ✅ Mostrar resumo
+
   res.innerHTML = `
     <div style="background:#E8F0F8;border:2px solid #005BAA;border-radius:8px;padding:20px;margin:15px 0">
       <h3>📊 Resumo do Boleto</h3>
@@ -134,18 +228,16 @@ function mostrarResultados(dados) {
       <p><strong>📈 Dias em Atraso:</strong> ${calc.dias} dias</p>
       <p><strong>💸 Juros:</strong> R$ ${calc.juros.toFixed(2).replace('.', ',')}</p>
       <p><strong>💰 Multa:</strong> R$ ${calc.multa.toFixed(2).replace('.', ',')}</p>
-      <p><strong>🏦 taxa de serviço:</strong> R$ ${calc.taxa.toFixed(2).replace('.', ',')}</p>
+      <p><strong>🏦 Taxa de serviço:</strong> R$ ${calc.taxa.toFixed(2).replace('.', ',')}</p>
       <hr>
       <p><strong>📋 Código recebido:</strong> ${dados.codigoRecebido}</p>
     </div>
   `;
-  
-  // ✅ Habilitar botão de pagar
+
   btnProcessar.disabled = false;
   btnProcessar.textContent = '💳 Gerar Pix';
 }
 
-// ✅ CALCULAR VALORES (copiado do backend)
 function calcularValorFinal(valorOriginal, dataVenc) {
   const hoje = new Date();
   const venc = new Date(dataVenc);
@@ -157,48 +249,53 @@ function calcularValorFinal(valorOriginal, dataVenc) {
   return { dias, juros, multa, taxa: 4.90, total };
 }
 
-// ✅ GERAR PIX
 async function gerarPagamento(dados) {
   const cpfCnpj = document.getElementById('cpfCnpj').value.replace(/\D/g, '');
-  const email = document.getElementById('emailUsuario').value;
-  
+  const email = document.getElementById('emailUsuario').value.trim();
+
+  if (!cpfCnpj || !email) {
+    alert('⚠️ Preencha CPF/CNPJ e e-mail antes de pagar.');
+    return;
+  }
+
   const resp = await fetch('/api/pagamento/gerar', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       codigoBarras: dados.codigoRecebido,
-      valorFinal: dados.valorFinal,
-      valorOriginal: dados.valorOriginal,
-      juros: dados.juros,
-      taxaServico: dados.taxaServico,
-      cpfCnpj: cpfCnpj,
-      email: email
+      valorFinal: Number(dados.valorFinal || dados.valorOriginal),
+      valorOriginal: Number(dados.valorOriginal),
+      juros: Number(dados.juros || 0),
+      taxaServico: Number(dados.taxaServico || 4.9),
+      cpfCnpj,
+      email
     })
   });
+
   const r = await resp.json();
-  
-  if (r.sucesso) {
-    const corStatus = r.confirmado ? 'green' : 'orange';
-    res.innerHTML = `
-      <h2 style="color:${corStatus};text-align:center">${r.confirmado ? '✅ PAGAMENTO CONFIRMADO!' : '⏳ PIX GERADO — AGUARDANDO CONFIRMAÇÃO'}</h2>
-      <p style="text-align:center">Transação: <strong>${r.transacaoId}</strong></p>
-      <p style="text-align:center;color:${corStatus}">${r.mensagemConfirmacao}</p>
-      <p style="text-align:center">Data/Hora: ${r.dataHoraConfirmacao}</p>
-      <div style="text-align:center;margin:15px 0"><img src="${r.qrCodeUrl}" style="width:220px;height:220px"></div>
-      <p><strong>📋 CÓDIGO PIX — COPIE E COLE NO BANCO:</strong></p>
-      <div style="background:#E8F0F8;border:2px solid #005BAA;border-radius:8px;padding:10px;word-break:break-all;font-size:12px">${r.payloadPix}</div>
-      <button onclick="navigator.clipboard.writeText(document.querySelector('div[style*=background]').textContent);alert('✅ Copiado! Cole no app do banco!')" style="background:#005BAA;color:white;border:none;padding:10px;border-radius:8px;margin:8px 0;width:100%">📋 COPIAR CÓDIGO PIX</button>
-      <hr style="margin:15px 0;border-color:#FFCC00">
-      <h3>📄 COMPROVANTE DE PAGAMENTO</h3>
-      <textarea id="textoComprovante" style="width:100%;height:180px;padding:10px;border:2px solid #CCC;border-radius:8px;font-family:monospace;font-size:12px" readonly>${JSON.stringify(r.comprovante,null,2)}</textarea>
-      <button onclick="baixarPDF('${r.transacaoId}')" style="background:#16a34a;color:white;border:none;padding:12px;border-radius:8px;margin-top:10px;width:100%;font-weight:bold">⬇️ BAIXAR COMPROVANTE EM PDF</button>
-    `;
-  } else {
-    alert('Erro: ' + r.erro);
+
+  if (!r.sucesso) {
+    alert('Erro real do pagamento: ' + (r.erro || 'Falha ao gerar pagamento.'));
+    return;
   }
+
+  const corStatus = r.confirmado ? 'green' : 'orange';
+  res.innerHTML = `
+    <h2 style="color:${corStatus};text-align:center">${r.confirmado ? '✅ PAGAMENTO CONFIRMADO!' : '⏳ PIX GERADO — AGUARDANDO CONFIRMAÇÃO'}</h2>
+    <p style="text-align:center">Transação: <strong>${r.transacaoId}</strong></p>
+    <p style="text-align:center;color:${corStatus}">${r.mensagemConfirmacao}</p>
+    <p style="text-align:center">Data/Hora: ${r.dataHoraConfirmacao}</p>
+    <div style="text-align:center;margin:15px 0"><img src="${r.qrCodeUrl}" style="width:220px;height:220px"></div>
+    <p><strong>📋 CÓDIGO PIX — COPIE E COLE NO BANCO:</strong></p>
+    <div style="background:#E8F0F8;border:2px solid #005BAA;border-radius:8px;padding:10px;word-break:break-all;font-size:12px">${r.payloadPix}</div>
+    <button onclick="navigator.clipboard.writeText(document.querySelector('div[style*=background]').textContent);alert('✅ Copiado! Cole no app do banco!')" style="background:#005BAA;color:white;border:none;padding:10px;border-radius:8px;margin:8px 0;width:100%">📋 COPIAR CÓDIGO PIX</button>
+    <hr style="margin:15px 0;border-color:#FFCC00">
+    <h3>📄 COMPROVANTE DE PAGAMENTO</h3>
+    <textarea id="textoComprovante" style="width:100%;height:180px;padding:10px;border:2px solid #CCC;border-radius:8px;font-family:monospace;font-size:12px" readonly>${JSON.stringify(r.comprovante, null, 2)}</textarea>
+    <button onclick="baixarPDF('${r.transacaoId}')" style="background:#16a34a;color:white;border:none;padding:12px;border-radius:8px;margin-top:10px;width:100%;font-weight:bold">⬇️ BAIXAR COMPROVANTE EM PDF</button>
+  `;
 }
 
-// ✅ BAIXA COMPROVANTE EM PDF DE VERDADE
 function baixarPDF(transacaoId) {
   const texto = document.getElementById('textoComprovante').value;
   const janela = window.open('', '_blank');

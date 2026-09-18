@@ -1,16 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const tesseract = require('node-tesseract-ocr');
 
-// ✅ UPLOAD CONFIGURADO EXATAMENTE COMO FUNCIONAVA NO INÍCIO
 const upload = multer({ storage: multer.memoryStorage() });
 
 const REGRAS = {
   JUROS_DIA: 0.01 / 30,
   MULTA: 0.02,
-  TAXA_SERVICO: 4.90
+  TAXA_SERVICO: 4.9,
+  DATA_BASE: new Date('1997-10-07T00:00:00')
 };
+
+function formatarDataLocal(data) {
+  const d = new Date(data);
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
 
 function diasVencidos(dataVenc) {
   const hoje = new Date();
@@ -27,87 +32,68 @@ function calcularValorFinal(valorOriginal, dataVenc) {
   return { dias, juros, multa, taxa: REGRAS.TAXA_SERVICO, total };
 }
 
-// ✅ FUNÇÃO: LER CÓDIGO DE BARRAS USANDO OCR REAL
-async function extrairCodigoBarrasOCR(buffer) {
-  try {
-    const tempPath = '/tmp/boleto-' + Date.now() + '.png';
-    require('fs').writeFileSync(tempPath, buffer);
-    
-    tesseract
-      .recognize(tempPath, {
-        lang: 'por',
-        oem: 3,
-        psm: 6,
-        timeout: 10000
-      })
-      .then((text) => {
-        require('fs').unlinkSync(tempPath);
-        
-        // ✅ EXTRAIR os 44 dígitos do código de barras FEBRABAN
-        // Padrão: os dígitos normalmente estão na região do código de barras
-        const codigoMatch = text.match(/\\d{44}/);
-        if (codigoMatch && codigoMatch[0].length === 44) {
-          return codigoMatch[0];
-        }
-        
-        // ✅ Tentar encontrar qualquer sequência de 44 dígitos
-        const allNumbers = text.replace(/\D/g, '');
-        if (allNumbers.length >= 44) {
-          return allNumbers.substring(0, 44);
-        }
-        
-        return null;
-      })
-      .catch((erro) => {
-        require('fs').unlinkSync(tempPath);
-        console.error('❌ Erro OCR:', erro.message);
-        return null;
-      });
-  } catch (erro) {
-    console.error('❌ Erro ao processar OCR:', erro.message);
-    return null;
-  }
+function extrairDadosDoCodigoBarras(codigo) {
+  const digits = normalizarCodigoBarras(codigo);
+  if (!digits || digits.length !== 44) return null;
+
+  const valorOriginal = Number(digits.slice(4, 14) || '0');
+  const fatorVencimento = Number(digits.slice(14, 18) || '0');
+
+  const vencimento = new Date(REGRAS.DATA_BASE.getTime() + fatorVencimento * 24 * 60 * 60 * 1000);
+  return {
+    codigo: digits,
+    valor: valorOriginal,
+    fatorVencimento,
+    vencimento,
+    vencimentoFormatado: formatarDataLocal(vencimento)
+  };
 }
 
-// ✅ ROTA DE UPLOAD — COM LEITOR REAL DE CÓDIGO DE BARRAS
+function normalizarCodigoBarras(codigo) {
+  const digits = String(codigo || '').replace(/\D/g, '');
+  if (digits.length === 44) return digits;
+
+  if (digits.length === 47) {
+    return digits.slice(0, 4) + digits[32] + digits.slice(33, 47)
+      + digits.slice(4, 9) + digits.slice(10, 20) + digits.slice(21, 31);
+  }
+
+  if (digits.length === 48) {
+    return [0, 12, 24, 36].map((inicio) => digits.slice(inicio, inicio + 11)).join('');
+  }
+
+  return null;
+}
+
 router.post('/ler', upload.single('foto'), async (req, res) => {
   try {
-    // ✅ MOSTRA NO TERMINAL SE A FOTO CHEGOU
     console.log('══════════════════════════════════════════════════');
     console.log('📸 FOTO:', req.file ? '✅ CHEGOU! Tamanho: ' + req.file.size + ' bytes' : '❌ NÃO CHEGOU!');
     console.log('══════════════════════════════════════════════════');
 
-    let codigoBarras = '';
-    
-    // ✅ TENTAR LER COM OCR PRIMEIRO
-    if (req.file) {
-      codigoBarras = await extrairCodigoBarrasOCR(req.file.buffer);
-    }
-    
-    // ✅ SE OCR falhar, pedir para usuário digitar manualmente
+    const codigoBarras = req.body?.codigoBarras || '';
+
     if (!codigoBarras) {
-      return res.json({ 
-        erro: 'Não consegui ler o código de barras da imagem. '
-      + 'Por favor, digite os 44 números do código de barras manualmente.'
-      + '<br><input type="text" id="codigoManual" maxlength="44" style="padding:10px;width:100%;margin:10px 0;">'
-      + '<button onclick="document.getElementById(\'codigoManual\').focus()" style="padding:8px 15px">Focar para digitar</button>'
+      return res.status(400).json({
+        erro: 'Não consegui ler o código de barras automaticamente. Tire uma foto mais nítida.'
       });
     }
-    
-    if (!codigoBarras || codigoBarras.length !== 44) {
-      return res.json({ erro: 'Digite os 44 números do código de barras!' });
+
+    const codigoLimpo = normalizarCodigoBarras(codigoBarras);
+    if (!codigoLimpo) {
+      return res.status(400).json({ erro: 'O código de barras lido não possui um formato válido.' });
     }
 
-    const dados = extrairDadosDoCodigoBarras(codigoBarras);
+    const dados = extrairDadosDoCodigoBarras(codigoLimpo);
     if (!dados) {
-      return res.json({ erro: 'Código de barras inválido!' });
+      return res.status(400).json({ erro: 'Código de barras inválido.' });
     }
 
-    const calc = calcularValorFinal(dados.valor, dados.vencimento);
+    const calc = calcularValorFinal(dados.valor, dados.vencimentoFormatado);
 
-    res.json({
+    return res.json({
       sucesso: true,
-      codigoRecebido: codigoBarras,
+      codigoRecebido: dados.codigo,
       valorOriginal: dados.valor,
       dataVencimento: dados.vencimentoFormatado,
       diasVencidos: calc.dias,
@@ -116,11 +102,14 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
       taxaServico: calc.taxa,
       valorFinal: calc.total
     });
-
   } catch (erro) {
     console.error('❌ ERRO:', erro.message);
-    res.json({ erro: 'Erro: ' + erro.message });
+    return res.status(500).json({ erro: 'Erro ao processar boleto: ' + erro.message });
   }
 });
+
+router.extrairDadosDoCodigoBarras = extrairDadosDoCodigoBarras;
+router.calcularValorFinal = calcularValorFinal;
+router.normalizarCodigoBarras = normalizarCodigoBarras;
 
 module.exports = router;
