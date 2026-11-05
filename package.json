@@ -1,5 +1,5 @@
 {
-  "name": "boleto-facil-loterica",
+  "name": "boleto-facil-reader",
   "version": "1.0.0",
   "main": "backend/server.js",
   "scripts": { "start": "node backend/server.js", "test": "node --test" },
