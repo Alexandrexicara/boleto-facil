@@ -1,0 +1,62 @@
+openapi: 3.0.3
+info:
+  title: Boleto Fácil Reader API
+  version: 1.0.0
+  description: API de leitura e interpretação de boletos. Não executa pagamentos.
+servers:
+  - url: /
+paths:
+  /api/boleto/interpretar:
+    post:
+      summary: Interpretar linha digitável ou código de barras bancário
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [codigoBarras]
+              properties:
+                codigoBarras:
+                  type: string
+                  description: Código bancário com 44 dígitos ou linha digitável com 47 dígitos.
+      responses:
+        '200':
+          description: Dados extraídos e dígitos validados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sucesso: { type: boolean }
+                  etapa: { type: string, example: leitura_validada }
+                  codigoBarras: { type: string }
+                  banco:
+                    type: object
+                    properties:
+                      codigo: { type: string }
+                      nome: { type: string, nullable: true }
+                  valorOriginal: { type: number }
+                  dataVencimento: { type: string, nullable: true, format: date }
+                  beneficiario:
+                    type: object
+                    properties:
+                      identificado: { type: boolean, example: false }
+                  encargos:
+                    type: object
+                    properties:
+                      consultados: { type: boolean, example: false }
+                      valorAtualizado: { type: number, nullable: true }
+                  pagamento:
+                    type: object
+                    properties:
+                      iniciado: { type: boolean, example: false }
+                      liquidado: { type: boolean, example: false }
+                      baixaConfirmada: { type: boolean, example: false }
+        '400': { description: Formato inválido }
+        '422': { description: Dígitos verificadores inválidos ou formato não suportado }
+  /api/pagamento:
+    post:
+      summary: Pagamentos não habilitados nesta versão
+      responses:
+        '410': { description: Pagamento bloqueado até integração financeira homologada }
