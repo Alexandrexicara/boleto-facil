@@ -36,7 +36,8 @@ paths:
                     properties:
                       codigo: { type: string }
                       nome: { type: string, nullable: true }
-                  valorOriginal: { type: number }
+                  valorOriginal: { type: number, nullable: true, description: null quando o boleto não codifica valor nominal }
+                  valorDefinido: { type: boolean, example: true }
                   dataVencimento: { type: string, nullable: true, format: date }
                   beneficiario:
                     type: object
