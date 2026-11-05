@@ -213,7 +213,14 @@ function mostrarResultados(dados) {
   document.getElementById('dataVencimento').value = dados.dataVencimento;
   document.getElementById('diasVencidos').value = Number(dados.diasVencidos || 0);
 
-  const calc = calcularValorFinal(Number(dados.valorOriginal), dados.dataVencimento);
+  // A API é a fonte única dos valores lidos e calculados; não recalcular no navegador.
+  const calc = {
+    dias: Number(dados.diasVencidos || 0),
+    juros: Number(dados.juros || 0),
+    multa: Number(dados.multa || 0),
+    taxa: Number(dados.taxaServico || 0),
+    total: Number(dados.valorFinal || dados.valorOriginal || 0)
+  };
 
   document.getElementById('juros').value = calc.juros.toFixed(2);
   document.getElementById('multa').value = calc.multa.toFixed(2);
@@ -223,12 +230,14 @@ function mostrarResultados(dados) {
   res.innerHTML = `
     <div style="background:#E8F0F8;border:2px solid #005BAA;border-radius:8px;padding:20px;margin:15px 0">
       <h3>📊 Resumo do Boleto</h3>
-      <p><strong>💰 Valor Original:</strong> R$ ${calc.total.toFixed(2).replace('.', ',')}</p>
-      <p><strong>📅 Data de Vencimento:</strong> ${dados.dataVencimento}</p>
+      <p><strong>💰 Valor Original:</strong> R$ ${Number(dados.valorOriginal).toFixed(2).replace('.', ',')}</p>
+      <p><strong>📅 Data de Vencimento:</strong> ${dados.dataVencimento || 'Não informada no código'}</p>
       <p><strong>📈 Dias em Atraso:</strong> ${calc.dias} dias</p>
-      <p><strong>💸 Juros:</strong> R$ ${calc.juros.toFixed(2).replace('.', ',')}</p>
-      <p><strong>💰 Multa:</strong> R$ ${calc.multa.toFixed(2).replace('.', ',')}</p>
+      <p><strong>💸 Juros estimados:</strong> R$ ${calc.juros.toFixed(2).replace('.', ',')}</p>
+      <p><strong>💰 Multa estimada:</strong> R$ ${calc.multa.toFixed(2).replace('.', ',')}</p>
       <p><strong>🏦 Taxa de serviço:</strong> R$ ${calc.taxa.toFixed(2).replace('.', ',')}</p>
+      <p><strong>💳 Total estimado:</strong> R$ ${calc.total.toFixed(2).replace('.', ',')}</p>
+      <p style="font-size:12px;color:#8a4b08">${dados.avisoCalculo || 'O valor exato deve ser confirmado com o beneficiário.'}</p>
       <hr>
       <p><strong>📋 Código recebido:</strong> ${dados.codigoRecebido}</p>
     </div>
