@@ -26,6 +26,12 @@ npm start
 ```
 Acesse `http://localhost:3000`.
 
+## Integrações bancárias
+- Existe um registro interno para adaptadores por instituição em `backend/integrations/provider-registry.js`.
+- O contrato exige consulta de cobrança, iniciação de pagamento, consulta de estado e verificação de webhook.
+- Nenhum banco está conectado ou homologado por padrão; o registro não cria conexão nem simula pagamento.
+- Credenciais e implementação de cada adaptador devem permanecer no backend e ser adicionadas somente após contrato e homologação.
+
 ## API
 - `POST /api/boleto/interpretar` — JSON `{ "codigoBarras": "..." }`
 - `GET /health` — verificação básica.
