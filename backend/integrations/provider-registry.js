@@ -49,8 +49,7 @@ class ProviderRegistry {
   list() {
     return [...this.providers.values()].map(provider => ({
       id: provider.id,
-      versao: provider.versao,
-      ativo: true
+      versao: provider.versao
     }));
   }
 
