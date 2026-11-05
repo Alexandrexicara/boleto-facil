@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const router = require('../backend/routes/boletos');
 
 function makeBarcode({ value = '0000001234', factor = '1000' } = {}) {
-  const partial = '001' + '9' + '0' + factor + value + '1234567890123456789012345';
+  const partial = '001' + '9' + factor + value + '1234567890123456789012345';
   assert.equal(partial.length, 43);
   return partial.slice(0, 4) + router.modulo11Boleto(partial) + partial.slice(4);
 }
