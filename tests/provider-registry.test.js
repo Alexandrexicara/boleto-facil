@@ -42,7 +42,7 @@ test('listagem expõe apenas metadados, nunca segredos do adaptador', () => {
   const registry = new ProviderRegistry();
   registry.register(adaptadorValido());
   const listed = registry.list();
-  assert.deepEqual(listed, [{ id: 'banco-exemplo', versao: '1.0.0', ativo: true }]);
+  assert.deepEqual(listed, [{ id: 'banco-exemplo', versao: '1.0.0' }]);
   assert.equal(JSON.stringify(listed).includes('nao-deve-ser-exposto'), false);
 });
 
