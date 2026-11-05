@@ -48,9 +48,11 @@ function extrairDadosDoCodigoBarras(value) {
   const cents = Number(code.slice(9,19));
   const factor = Number(code.slice(5,9));
   const due = dataVencimentoDoFator(factor);
+  const valorDefinido = cents > 0;
   return {
     codigo:code, tipo:'boleto_bancario', bancoCodigo:code.slice(0,3),
-    moeda:code[3], valorCentavos:cents, valor:cents/100,
+    moeda:code[3], valorCentavos:cents,
+    valorDefinido, valor:valorDefinido ? cents/100 : null,
     fatorVencimento:factor, vencimento:due ? isoDate(due) : null
   };
 }
