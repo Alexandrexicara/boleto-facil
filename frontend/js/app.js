@@ -10,6 +10,7 @@
   const video = document.getElementById('videoCamera');
   let ultimoResultado = null;
   let cameraControls = null;
+  let previewUrl = null;
 
   const setStatus = (message) => { statusEl.textContent = message; };
   const somenteDigitos = (value) => String(value || '').replace(/\D/g, '');
@@ -72,6 +73,9 @@
           } catch (_) {}
         }
       }
+      if (!window.ZXingBrowser && !window.Tesseract?.recognize) {
+        throw new Error('Os leitores de imagem não carregaram. Verifique a conexão e tente novamente.');
+      }
       throw new Error('Não foi possível reconhecer uma linha digitável válida. Tente outra foto, bem iluminada e sem cortes.');
     } finally {
       URL.revokeObjectURL(objectUrl);
@@ -115,12 +119,15 @@
   async function processarArquivo(file) {
     if (!file || !file.type.startsWith('image/')) return setStatus('Selecione uma imagem válida.');
     resultado.classList.add('oculto');
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     preview.replaceChildren();
+    previewUrl = URL.createObjectURL(file);
     const img = document.createElement('img');
     img.className = 'scan-image';
     img.alt = 'Imagem selecionada do boleto';
-    img.src = URL.createObjectURL(file);
+    img.src = previewUrl;
     preview.append(img);
+    ultimoResultado = null;
     try {
       setStatus('Analisando imagem e procurando código de barras…');
       const code = await lerImagem(file);
@@ -137,6 +144,8 @@
   document.getElementById('abrirCamera').addEventListener('click', async () => {
     if (!window.ZXingBrowser) return setStatus('Leitor da câmera indisponível neste momento.');
     try {
+      ultimoResultado = null;
+      resultado.classList.add('oculto');
       painelCamera.classList.remove('oculto');
       setStatus('Aponte a câmera para o código de barras do boleto.');
       const reader = new ZXingBrowser.BrowserMultiFormatReader();
