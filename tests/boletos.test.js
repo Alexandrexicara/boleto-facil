@@ -20,8 +20,8 @@ function modulo10(value) {
   }
   return (10 - sum % 10) % 10;
 }
-function boletoValido() {
-  const base = '0019' + '0' + '1000' + '0000012345' + '0'.repeat(25);
+function boletoValido(valor = '0000012345') {
+  const base = '0019' + '0' + '1000' + valor + '0'.repeat(25);
   return base.slice(0,4) + String(modulo11(base.slice(0,4) + base.slice(5))) + base.slice(5);
 }
 function linhaDigitavel(code) {
@@ -61,4 +61,14 @@ test('não confunde arrecadação de 48 dígitos com boleto bancário', () => {
 
 test('não aceita entrada com comprimento arbitrário', () => {
   assert.equal(boletos.normalizarCodigoBarras('123456'), null);
+});
+
+
+test('não apresenta R$ 0,00 quando o boleto não codifica valor nominal', () => {
+  const code = boletoValido('0000000000');
+  const result = boletos.extrairDadosDoCodigoBarras(code);
+  assert.ok(result);
+  assert.equal(result.valorCentavos, 0);
+  assert.equal(result.valorDefinido, false);
+  assert.equal(result.valor, null);
 });
