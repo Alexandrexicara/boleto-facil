@@ -1,324 +1,239 @@
-// ✅ INÍCIO DO APP - LEITOR DE BOLETOS COM OCR
+(() => {
+  'use strict';
 
-const apiBase = '/api/boleto';
-let boletoAtual = null;
+  const apiBase = '/api/boleto';
+  const fotoInput = document.getElementById('foto');
+  const statusEl = document.getElementById('status');
+  const preview = document.getElementById('preview');
+  const resultado = document.getElementById('resultado');
+  const dadosEl = document.getElementById('dadosBoleto');
+  const painelCamera = document.getElementById('painelCamera');
+  const video = document.getElementById('videoCamera');
 
-const fotoInput = document.getElementById('foto');
-const preview = document.getElementById('preview');
-const camposUsuario = document.getElementById('camposUsuario');
-const camposBoleto = document.getElementById('camposBoleto');
-const btnProcessar = document.getElementById('btn');
-const res = document.getElementById('res');
+  let ultimoResultado = null;
+  let cameraControls = null;
+  let previewUrl = null;
 
-async function lerCodigoDeBarras(file) {
-  const url = URL.createObjectURL(file);
-  try {
-    const imagem = await new Promise((resolve, reject) => {
-      const elemento = new Image();
-      elemento.onload = () => resolve(elemento);
-      elemento.onerror = () => reject(new Error('Não foi possível carregar a foto.'));
-      elemento.src = url;
+  const setStatus = message => { statusEl.textContent = message; };
+  const somenteDigitos = value => String(value || '').replace(/\D/g, '');
+
+  function linhasCandidatas(texto) {
+    const compactado = String(texto || '').replace(/\s+/g, '');
+    const candidatas = new Set();
+
+    for (const match of compactado.matchAll(/(?:\d[.\s-]?){43,47}\d/g)) {
+      const digits = somenteDigitos(match[0]);
+      if ([44, 47].includes(digits.length)) candidatas.add(digits);
+    }
+
+    for (const match of String(texto || '').matchAll(/\d{44}|\d{47}/g)) {
+      candidatas.add(match[0]);
+    }
+
+    return [...candidatas];
+  }
+
+  async function interpretar(codigo) {
+    const response = await fetch(`${apiBase}/interpretar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigoBarras: codigo })
     });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.erro || 'Não foi possível validar o boleto.');
+    return data;
+  }
 
+  async function tentarZXing(file, objectUrl) {
     if (!window.ZXingBrowser) return null;
 
-    const leitor = new ZXingBrowser.BrowserMultiFormatReader();
-    const tentativas = [];
-    const larguraOriginal = imagem.naturalWidth;
-    const alturaOriginal = imagem.naturalHeight;
-    const escala = Math.min(1.5, 2200 / Math.max(larguraOriginal, alturaOriginal));
-
-    function adicionarCanvas(corte, altoContraste = false) {
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(corte.largura * escala));
-      canvas.height = Math.max(1, Math.round(corte.altura * escala));
-      const contexto = canvas.getContext('2d', { willReadFrequently: true });
-      contexto.drawImage(
-        imagem,
-        corte.x, corte.y, corte.largura, corte.altura,
-        0, 0, canvas.width, canvas.height
-      );
-
-      if (altoContraste) {
-        const pixels = contexto.getImageData(0, 0, canvas.width, canvas.height);
-        for (let indice = 0; indice < pixels.data.length; indice += 4) {
-          const cinza = Math.round(
-            pixels.data[indice] * 0.299 +
-            pixels.data[indice + 1] * 0.587 +
-            pixels.data[indice + 2] * 0.114
-          );
-          const contraste = cinza < 160 ? 0 : 255;
-          pixels.data[indice] = contraste;
-          pixels.data[indice + 1] = contraste;
-          pixels.data[indice + 2] = contraste;
-        }
-        contexto.putImageData(pixels, 0, 0);
-      }
-      tentativas.push(canvas);
-    }
-
-    tentativas.push(imagem);
-    adicionarCanvas({ x: 0, y: 0, largura: larguraOriginal, altura: alturaOriginal });
-    adicionarCanvas({
-      x: 0,
-      y: Math.round(alturaOriginal * 0.55),
-      largura: larguraOriginal,
-      altura: Math.round(alturaOriginal * 0.45)
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Não foi possível abrir a imagem para leitura do código.'));
+      img.src = objectUrl;
     });
-    adicionarCanvas({
-      x: 0,
-      y: Math.round(alturaOriginal * 0.55),
-      largura: larguraOriginal,
-      altura: Math.round(alturaOriginal * 0.45)
-    }, true);
 
-    for (const tentativa of tentativas) {
+    const reader = new ZXingBrowser.BrowserMultiFormatReader();
+    const canvases = [];
+    const largestSide = Math.max(image.naturalWidth, image.naturalHeight);
+    const scale = Math.min(2, 2400 / largestSide);
+    const crops = [
+      { x: 0, y: 0, w: image.naturalWidth, h: image.naturalHeight },
+      { x: 0, y: image.naturalHeight * 0.45, w: image.naturalWidth, h: image.naturalHeight * 0.55 },
+      { x: 0, y: image.naturalHeight * 0.65, w: image.naturalWidth, h: image.naturalHeight * 0.35 }
+    ];
+
+    for (const crop of crops) {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(crop.w * scale));
+      canvas.height = Math.max(1, Math.round(crop.h * scale));
+      const context = canvas.getContext('2d');
+      if (!context) continue;
+      context.drawImage(image, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
+      canvases.push(canvas);
+    }
+
+    for (const canvas of canvases) {
       try {
-        if ('BarcodeDetector' in window) {
-          try {
-            const detector = new BarcodeDetector({ formats: ['itf', 'code_128', 'codabar'] });
-            const encontrados = await detector.detect(tentativa);
-            const codigoNativo = encontrados[0]?.rawValue?.replace(/\D/g, '');
-            if (codigoNativo && [44, 47, 48].includes(codigoNativo.length)) return codigoNativo;
-          } catch (erro) {
-            console.warn('Detector nativo indisponível:', erro.message);
-          }
-        }
-
-        const resultado = tentativa instanceof HTMLCanvasElement
-          ? await leitor.decodeFromCanvas(tentativa)
-          : await leitor.decodeFromImageElement(tentativa);
-        const codigoZxing = resultado?.getText?.() || resultado?.text || '';
-        const codigo = codigoZxing.replace(/\D/g, '');
-        if (codigo && [44, 47, 48].includes(codigo.length)) return codigo;
-      } catch (erro) {
-        console.warn('Tentativa de leitura falhou:', erro.message);
+        const result = await reader.decodeFromCanvas(canvas);
+        const code = somenteDigitos(result?.getText?.());
+        if ([44, 47].includes(code.length)) return code;
+      } catch (_) {
+        // Tenta outras áreas da imagem antes de recorrer ao OCR.
       }
     }
 
     return null;
-  } catch (erro) {
-    console.warn('Leitor de código de barras não encontrou um código:', erro.message);
-    return null;
-  } finally {
-    URL.revokeObjectURL(url);
   }
-}
 
-fotoInput.addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    preview.innerHTML = `<img src="${event.target.result}" class="scan-image" alt="Preview do boleto">`;
-    preview.style.display = 'block';
-  };
-  reader.readAsDataURL(file);
-
-  boletoAtual = null;
-  btnProcessar.disabled = false;
-  btnProcessar.textContent = '🔍 Ler Boleto';
-  res.innerHTML = '';
-  res.classList.remove('oculto');
-  camposUsuario.classList.add('oculto');
-  camposBoleto.classList.add('oculto');
-});
-
-btnProcessar.addEventListener('click', async () => {
-  if (boletoAtual) {
-    const cpfCnpj = document.getElementById('cpfCnpj').value.trim();
-    const email = document.getElementById('emailUsuario').value.trim();
-
-    if (!cpfCnpj || !email) {
-      alert('⚠️ Informe CPF/CNPJ e e-mail antes de gerar o pagamento.');
-      return;
-    }
-
-    btnProcessar.disabled = true;
-    btnProcessar.textContent = '⏳ Gerando Pix...';
-    res.innerHTML = '⏳ Enviando pagamento real para a API...';
+  async function lerImagem(file) {
+    const objectUrl = URL.createObjectURL(file);
 
     try {
-      await gerarPagamento(boletoAtual);
+      if (window.ZXingBrowser) {
+        try {
+          const code = await tentarZXing(file, objectUrl);
+          if (code) return code;
+        } catch (error) {
+          console.warn('Leitura ZXing indisponível para esta imagem:', error);
+        }
+      }
+
+      // OCR continua disponível mesmo quando o CDN do ZXing não carrega.
+      if (window.Tesseract?.recognize) {
+        setStatus('Código de barras não localizado. Tentando ler a linha digitável por OCR…');
+        const ocr = await window.Tesseract.recognize(file, 'por');
+        const candidates = linhasCandidatas(ocr?.data?.text || '');
+
+        for (const candidate of candidates) {
+          try {
+            await interpretar(candidate);
+            return candidate;
+          } catch (_) {
+            // Uma linha só é aceita depois da validação matemática no backend.
+          }
+        }
+      }
+
+      if (!window.ZXingBrowser && !window.Tesseract?.recognize) {
+        throw new Error('Os leitores de imagem não carregaram. Verifique a conexão e tente novamente.');
+      }
+
+      throw new Error('Não foi possível reconhecer uma linha digitável válida. Tente outra foto, bem iluminada e sem cortes.');
     } finally {
-      btnProcessar.disabled = false;
-      btnProcessar.textContent = '💳 Gerar Pix';
+      URL.revokeObjectURL(objectUrl);
     }
-    return;
   }
 
-  const file = fotoInput.files[0];
-  if (!file) {
-    alert('📷 Por favor, selecione uma foto primeiro!');
-    return;
+  function adicionarLinha(label, value) {
+    const dt = document.createElement('dt');
+    const dd = document.createElement('dd');
+    dt.textContent = label;
+    dd.textContent = value === null || value === undefined || value === ''
+      ? 'Não disponível na leitura'
+      : String(value);
+    dadosEl.append(dt, dd);
   }
 
-  btnProcessar.disabled = true;
-  btnProcessar.textContent = '⏳ Lendo código de barras...';
-  res.innerHTML = '⏳ Lendo o código de barras automaticamente...';
-  res.classList.remove('oculto');
+  function mostrar(data) {
+    ultimoResultado = data;
+    dadosEl.replaceChildren();
+    adicionarLinha('Banco emissor (código COMPE)', data.banco?.codigo);
+    adicionarLinha('Instituição identificada', data.banco?.nome || 'Código identificado; nome depende da tabela atualizada');
+    adicionarLinha('Valor original impresso', data.valorOriginal != null
+      ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.valorOriginal)
+      : null);
+    adicionarLinha('Vencimento codificado', data.dataVencimento);
+    adicionarLinha('Beneficiário / dono da cobrança', 'Não confirmado pelo código de barras — consultar fonte autorizada');
+    adicionarLinha('Valor atualizado', 'Pendente de consulta ao credor');
+    adicionarLinha('Situação da dívida', 'Não consultada');
+    adicionarLinha('Situação do pagamento', 'Não iniciado');
+    adicionarLinha('Validação dos dígitos', 'Aprovada');
+    resultado.classList.remove('oculto');
+    setStatus('Leitura validada. Aguardando consulta autorizada ao credor.');
+  }
 
-  try {
-    const codigo = await lerCodigoDeBarras(file);
-
-    if (!codigo) {
-      res.innerHTML = `
-        <div style="background:#FFF3E0;border:2px solid #FFCC00;border-radius:8px;padding:20px;margin:15px 0">
-          <h4>⚠️ Código não localizado na imagem</h4>
-          <p>Fotografe o boleto inteiro, com a linha de barras nítida, reta e sem reflexo.</p>
-          <p>O arquivo foi selecionado, mas nenhum código válido foi detectado.</p>
-        </div>
-      `;
-      btnProcessar.disabled = false;
-      btnProcessar.textContent = '🔍 Ler Boleto';
+  async function processarArquivo(file) {
+    if (!file || !file.type.startsWith('image/')) {
+      setStatus('Selecione uma imagem válida.');
       return;
     }
 
-    const formData = new FormData();
-    formData.append('foto', file);
-    formData.append('codigoBarras', codigo);
+    resultado.classList.add('oculto');
+    ultimoResultado = null;
 
-    const resp = await fetch(`${apiBase}/ler`, { method: 'POST', body: formData });
-    const data = await resp.json();
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    preview.replaceChildren();
+    previewUrl = URL.createObjectURL(file);
 
-    if (data.erro) {
-      res.innerHTML = `
-        <div style="background:#FFF3E0;border:2px solid #FFCC00;border-radius:8px;padding:20px;margin:15px 0">
-          <h4>⚠️ Não foi possível ler o código de barras</h4>
-          <p>${data.erro}</p>
-          <p>Tire outra foto com o código inteiro visível, sem sombra ou reflexo.</p>
-        </div>
-      `;
-      btnProcessar.disabled = false;
-      btnProcessar.textContent = '🔍 Ler Boleto';
+    const img = document.createElement('img');
+    img.className = 'scan-image';
+    img.alt = 'Imagem selecionada do boleto';
+    img.src = previewUrl;
+    preview.append(img);
+
+    try {
+      setStatus('Analisando imagem e procurando código de barras…');
+      const code = await lerImagem(file);
+      setStatus('Validando os dígitos do boleto…');
+      mostrar(await interpretar(code));
+    } catch (error) {
+      setStatus(error.message || 'Não foi possível ler o boleto.');
+    }
+  }
+
+  fotoInput.addEventListener('change', () => processarArquivo(fotoInput.files?.[0]));
+
+  document.getElementById('abrirCamera').addEventListener('click', async () => {
+    if (!window.ZXingBrowser) {
+      setStatus('Leitor da câmera indisponível. Envie uma foto para tentar a leitura por OCR.');
       return;
     }
 
-    mostrarResultados(data);
-  } catch (erro) {
-    console.error('❌ Erro:', erro);
-    res.innerHTML = `<p style="color:red">❌ Erro ao processar: ${erro.message}</p>`;
-    btnProcessar.disabled = false;
-    btnProcessar.textContent = '🔍 Ler Boleto';
-  }
-});
+    try {
+      ultimoResultado = null;
+      resultado.classList.add('oculto');
+      painelCamera.classList.remove('oculto');
+      setStatus('Aponte a câmera para o código de barras do boleto.');
 
-function mostrarResultados(dados) {
-  boletoAtual = dados;
-  camposUsuario.classList.remove('oculto');
-  camposBoleto.classList.remove('oculto');
+      const reader = new ZXingBrowser.BrowserMultiFormatReader();
+      cameraControls = await reader.decodeFromVideoDevice(undefined, video, async result => {
+        if (!result || ultimoResultado) return;
 
-  document.getElementById('valorOriginal').value = Number(dados.valorOriginal).toFixed(2);
-  document.getElementById('dataVencimento').value = dados.dataVencimento;
-  document.getElementById('diasVencidos').value = Number(dados.diasVencidos || 0);
+        const code = somenteDigitos(result.getText());
+        if (![44, 47].includes(code.length)) return;
 
-  // A API é a fonte única dos valores lidos e calculados; não recalcular no navegador.
-  const calc = {
-    dias: Number(dados.diasVencidos || 0),
-    juros: Number(dados.juros || 0),
-    multa: Number(dados.multa || 0),
-    taxa: Number(dados.taxaServico || 0),
-    total: Number(dados.valorFinal || dados.valorOriginal || 0)
-  };
+        ultimoResultado = { processando: true };
+        cameraControls?.stop();
 
-  document.getElementById('juros').value = calc.juros.toFixed(2);
-  document.getElementById('multa').value = calc.multa.toFixed(2);
-  document.getElementById('taxa').value = calc.taxa.toFixed(2);
-  document.getElementById('valorFinal').value = calc.total.toFixed(2);
-
-  res.innerHTML = `
-    <div style="background:#E8F0F8;border:2px solid #005BAA;border-radius:8px;padding:20px;margin:15px 0">
-      <h3>📊 Resumo do Boleto</h3>
-      <p><strong>💰 Valor Original:</strong> R$ ${Number(dados.valorOriginal).toFixed(2).replace('.', ',')}</p>
-      <p><strong>📅 Data de Vencimento:</strong> ${dados.dataVencimento || 'Não informada no código'}</p>
-      <p><strong>📈 Dias em Atraso:</strong> ${calc.dias} dias</p>
-      <p><strong>💸 Juros estimados:</strong> R$ ${calc.juros.toFixed(2).replace('.', ',')}</p>
-      <p><strong>💰 Multa estimada:</strong> R$ ${calc.multa.toFixed(2).replace('.', ',')}</p>
-      <p><strong>🏦 Taxa de serviço:</strong> R$ ${calc.taxa.toFixed(2).replace('.', ',')}</p>
-      <p><strong>💳 Total estimado:</strong> R$ ${calc.total.toFixed(2).replace('.', ',')}</p>
-      <p style="font-size:12px;color:#8a4b08">${dados.avisoCalculo || 'O valor exato deve ser confirmado com o beneficiário.'}</p>
-      <hr>
-      <p><strong>📋 Código recebido:</strong> ${dados.codigoRecebido}</p>
-    </div>
-  `;
-
-  btnProcessar.disabled = false;
-  btnProcessar.textContent = '💳 Gerar Pix';
-}
-
-function calcularValorFinal(valorOriginal, dataVenc) {
-  const hoje = new Date();
-  const venc = new Date(dataVenc);
-  const diff = hoje - venc;
-  const dias = diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0;
-  const juros = valorOriginal * 0.01 / 30 * dias;
-  const multa = dias > 0 ? valorOriginal * 0.02 : 0;
-  const total = valorOriginal + juros + multa + 4.90;
-  return { dias, juros, multa, taxa: 4.90, total };
-}
-
-async function gerarPagamento(dados) {
-  const cpfCnpj = document.getElementById('cpfCnpj').value.replace(/\D/g, '');
-  const email = document.getElementById('emailUsuario').value.trim();
-
-  if (!cpfCnpj || !email) {
-    alert('⚠️ Preencha CPF/CNPJ e e-mail antes de pagar.');
-    return;
-  }
-
-  const resp = await fetch('/api/pagamento/gerar', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      codigoBarras: dados.codigoRecebido,
-      valorFinal: Number(dados.valorFinal || dados.valorOriginal),
-      valorOriginal: Number(dados.valorOriginal),
-      juros: Number(dados.juros || 0),
-      taxaServico: Number(dados.taxaServico || 4.9),
-      cpfCnpj,
-      email
-    })
+        try {
+          mostrar(await interpretar(code));
+        } catch (error) {
+          ultimoResultado = null;
+          setStatus(error.message || 'Não foi possível validar o código.');
+        }
+      });
+    } catch (error) {
+      setStatus('Não foi possível acessar a câmera. Verifique a permissão ou envie uma foto.');
+    }
   });
 
-  const r = await resp.json();
+  document.getElementById('fecharCamera').addEventListener('click', () => {
+    cameraControls?.stop();
+    cameraControls = null;
+    video.srcObject?.getTracks?.().forEach(track => track.stop());
+    painelCamera.classList.add('oculto');
+  });
 
-  if (!r.sucesso) {
-    alert('Erro real do pagamento: ' + (r.erro || 'Falha ao gerar pagamento.'));
-    return;
-  }
+  document.getElementById('copiarDados').addEventListener('click', async () => {
+    if (!ultimoResultado || ultimoResultado.processando) return;
 
-  const corStatus = r.confirmado ? 'green' : 'orange';
-  res.innerHTML = `
-    <h2 style="color:${corStatus};text-align:center">${r.confirmado ? '✅ PAGAMENTO CONFIRMADO!' : '⏳ PIX GERADO — AGUARDANDO CONFIRMAÇÃO'}</h2>
-    <p style="text-align:center">Transação: <strong>${r.transacaoId}</strong></p>
-    <p style="text-align:center;color:${corStatus}">${r.mensagemConfirmacao}</p>
-    <p style="text-align:center">Data/Hora: ${r.dataHoraConfirmacao}</p>
-    <div style="text-align:center;margin:15px 0"><img src="${r.qrCodeUrl}" style="width:220px;height:220px"></div>
-    <p><strong>📋 CÓDIGO PIX — COPIE E COLE NO BANCO:</strong></p>
-    <div style="background:#E8F0F8;border:2px solid #005BAA;border-radius:8px;padding:10px;word-break:break-all;font-size:12px">${r.payloadPix}</div>
-    <button onclick="navigator.clipboard.writeText(document.querySelector('div[style*=background]').textContent);alert('✅ Copiado! Cole no app do banco!')" style="background:#005BAA;color:white;border:none;padding:10px;border-radius:8px;margin:8px 0;width:100%">📋 COPIAR CÓDIGO PIX</button>
-    <hr style="margin:15px 0;border-color:#FFCC00">
-    <h3>📄 COMPROVANTE DE PAGAMENTO</h3>
-    <textarea id="textoComprovante" style="width:100%;height:180px;padding:10px;border:2px solid #CCC;border-radius:8px;font-family:monospace;font-size:12px" readonly>${JSON.stringify(r.comprovante, null, 2)}</textarea>
-    <button onclick="baixarPDF('${r.transacaoId}')" style="background:#16a34a;color:white;border:none;padding:12px;border-radius:8px;margin-top:10px;width:100%;font-weight:bold">⬇️ BAIXAR COMPROVANTE EM PDF</button>
-  `;
-}
-
-function baixarPDF(transacaoId) {
-  const texto = document.getElementById('textoComprovante').value;
-  const janela = window.open('', '_blank');
-  janela.document.write(`
-    <html><head><title>Comprovante-${transacaoId}</title>
-    <style>body{font-family:Arial;padding:30px;line-height:1.6}h1{color:#005BAA}pre{background:#f5f5f5;padding:20px;border-radius:8px;white-space:pre-wrap}</style>
-    </head><body>
-    <h1>📄 COMPROVANTE DE PAGAMENTO</h1>
-    <hr>
-    <pre>${texto}</pre>
-    <hr>
-    <p>Data de emissão: ${new Date().toLocaleString('pt-BR')}</p>
-    <button onclick="window.print()" style="padding:10px 20px;font-size:16px;cursor:pointer">🖨️ SALVAR COMO PDF</button>
-    </body></html>
-  `);
-  janela.document.close();
-}
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(ultimoResultado, null, 2));
+      setStatus('Dados técnicos copiados.');
+    } catch (_) {
+      setStatus('Não foi possível copiar automaticamente neste navegador.');
+    }
+  });
+})();
