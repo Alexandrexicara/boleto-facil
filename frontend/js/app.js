@@ -136,14 +136,15 @@ async function processarArquivo(file){
   await img.decode();
   const codigo=await lerCodigoImagem(img);
   atualizarEtapa(3,'Lendo o documento inteiro em português e inglês...',25);
-  const texto=await reconhecerTexto(file);
-  mostrarTextoOCR(texto);
+  let texto='',erroOCR=null;
+  try{texto=await reconhecerTexto(file);mostrarTextoOCR(texto);}
+  catch(ocrError){erroOCR=ocrError;mostrarTextoOCR('O OCR local não concluiu: '+(ocrError.message||'falha ao carregar o mecanismo de leitura')+'. A imagem original será enviada à inteligência artificial para tentar a leitura.');}
   const candidatos=linhasCandidatas(texto);
   const codigoFinal=codigo||candidatos[0]||'';
   atualizarEtapa(4,'OCR concluído. Enviando imagem e texto para análise visual da NVIDIA...',65);
   const data=await interpretar(codigoFinal,texto,file);
   atualizarEtapa(5,'Análise recebida. Validando e organizando os campos identificados...',92);
-  mostrarTextoOCR(data.textoCompleto||data.textoReconhecido||texto);
+  mostrarTextoOCR(data.textoCompleto||data.textoReconhecido||texto||(erroOCR?'A imagem foi enviada à NVIDIA; o OCR local não conseguiu extrair texto.':''));
   mostrar(data);
   atualizarEtapa(5,'Leitura concluída. Confira os campos identificados abaixo.',100);
   painel.classList.add('oculto');
