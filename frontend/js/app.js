@@ -105,6 +105,20 @@ async function lerCodigoDeBarras(file) {
   }
 }
 
+async function lerTextoOCR(file) {
+  if (!window.Tesseract) throw new Error('Biblioteca OCR não carregada. Verifique sua conexão e recarregue a página.');
+  const resultado = await Tesseract.recognize(file, 'por+eng', {
+    logger: info => { if (info.status === 'recognizing text') btnProcessar.textContent = '⏳ OCR ' + Math.round((info.progress || 0) * 100) + '%'; }
+  });
+  return String(resultado.data?.text || '').trim();
+}
+function localizarCodigoNoTexto(texto) {
+  const linhas = String(texto || '').split(/\r?\n/);
+  for (const linha of linhas) { const digitos = linha.replace(/\D/g, ''); for (const tamanho of [47, 48, 44]) if (digitos.length >= tamanho) return digitos.slice(0, tamanho); }
+  const total = String(texto || '').replace(/\D/g, '');
+  for (const tamanho of [47, 48, 44]) if (total.length >= tamanho) return total.slice(0, tamanho);
+  return null;
+}
 fotoInput.addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -156,11 +170,17 @@ btnProcessar.addEventListener('click', async () => {
 
   btnProcessar.disabled = true;
   btnProcessar.textContent = '⏳ Lendo código de barras...';
-  res.innerHTML = '⏳ Lendo o código de barras automaticamente...';
+  res.innerHTML = '⏳ Tentando código de barras; se necessário, faremos OCR do boleto inteiro...';
   res.classList.remove('oculto');
 
   try {
-    const codigo = await lerCodigoDeBarras(file);
+    let codigo = await lerCodigoDeBarras(file);
+    let textoOCR = '';
+    if (!codigo) {
+      res.innerHTML = '<p>🔎 Código não localizado. Iniciando leitura OCR do documento inteiro...</p>';
+      textoOCR = await lerTextoOCR(file);
+      codigo = localizarCodigoNoTexto(textoOCR);
+    }
 
     if (!codigo) {
       res.innerHTML = `
@@ -178,6 +198,8 @@ btnProcessar.addEventListener('click', async () => {
     const formData = new FormData();
     formData.append('foto', file);
     formData.append('codigoBarras', codigo);
+    if (!textoOCR) { try { textoOCR = await lerTextoOCR(file); } catch (ocrErro) { console.warn('OCR complementar indisponível:', ocrErro); } }
+    formData.append('textoOCR', textoOCR);
 
     const resp = await fetch(`${apiBase}/ler`, { method: 'POST', body: formData });
     const data = await resp.json();
@@ -195,6 +217,7 @@ btnProcessar.addEventListener('click', async () => {
       return;
     }
 
+    data.textoReconhecido = data.textoReconhecido || textoOCR;
     mostrarResultados(data);
   } catch (erro) {
     console.error('❌ Erro:', erro);
