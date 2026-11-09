@@ -266,7 +266,11 @@ function mostrarResultados(dados) {
       <p><strong>💳 Total estimado:</strong> R$ ${calc.total.toFixed(2).replace('.', ',')}</p>
       <p style="font-size:12px;color:#8a4b08">${dados.avisoCalculo || 'O valor exato deve ser confirmado com o beneficiário.'}</p>
       <hr>
-      <p><strong>📋 Código recebido:</strong> ${dados.codigoRecebido}</p>
+      <p><strong>🏦 Banco:</strong> ${dados.banco || 'Não identificado'}</p>
+      <p><strong>👤 Beneficiário:</strong> ${dados.beneficiario || 'Conferir no documento'}</p>
+      <p><strong>🧾 CPF/CNPJ do beneficiário:</strong> ${dados.cpfCnpjBeneficiario || 'Não identificado'}</p>
+      <p><strong>📋 Código/linha identificada:</strong> ${dados.codigoRecebido || 'Não identificado'}</p>
+      <details><summary>Ver texto completo reconhecido pelo OCR</summary><pre style="white-space:pre-wrap;max-height:320px;overflow:auto">${String(dados.textoReconhecido || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) || 'OCR sem texto adicional.'}</pre></details>
     </div>
   `;
 
