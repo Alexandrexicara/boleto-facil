@@ -3,54 +3,50 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Caixa Loterias — Boleto Fácil</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect fill='%23005BAA' width='64' height='64' rx='8'/><text x='32' y='42' font-size='32' text-anchor='middle' fill='white' font-weight='bold'>C</text></svg>">
+  <meta name="theme-color" content="#102b46">
+  <meta name="description" content="Leitor universal de boletos bancários. Identifique dados e prepare a consulta segura ao credor.">
+  <title>Boleto Fácil | Leitura universal</title>
   <link rel="stylesheet" href="css/estilo.css">
 </head>
 <body>
-  <div class="topo-caixa">
-    <div class="logo-caixa">CAIXA</div>
-    <div class="subtitulo">Loterias — Boleto Fácil</div>
-  </div>
-
-  <div class="container">
-    <h1>📷 Envie a foto do boleto</h1>
-    <p>Leitura automática e pagamento via Pix</p>
-
-    <input type="file" id="foto" accept="image/*" capture="environment">
-    <label for="foto" class="btn-upload">📷 Selecionar foto do boleto</label>
-
+  <header class="topo-caixa">
+    <div class="logo-caixa">BOLETO FÁCIL</div>
+    <div class="subtitulo">Leitura universal • Tecnologia para instituições financeiras</div>
+  </header>
+  <main class="container">
+    <h1>Leia qualquer boleto bancário</h1>
+    <p>Use a câmera ou envie uma foto. A leitura identifica os dados disponíveis e prepara a consulta ao credor.</p>
+    <div class="acoes-leitura">
+      <button type="button" id="abrirCamera">📷 Ler com a câmera</button>
+      <label for="foto" class="btn-upload">🖼️ Escolher foto do boleto</label>
+      <input type="file" id="foto" accept="image/*">
+    </div>
+    <section id="painelCamera" class="oculto" aria-label="Leitor pela câmera">
+      <video id="videoCamera" playsinline muted></video>
+      <button type="button" id="fecharCamera" class="secundario">Fechar câmera</button>
+    </section>
     <div id="preview"></div>
-
-    <!-- ✅ CAMPOS MAIORES — MELHOR PARA CELULAR -->
-    <div id="camposUsuario" class="oculto">
-      <hr>
-      <h3>👤 Dados do Pagador</h3>
-      <input type="text" id="cpfCnpj" placeholder="CPF ou CNPJ (apenas números)" maxlength="18">
-      <input type="email" id="emailUsuario" placeholder="Seu e-mail">
-    </div>
-
-    <!-- ✅ CAMPOS DO BOLETO (preenchidos pelo OCR) -->
-    <div id="camposBoleto" class="oculto">
-      <hr>
-      <h3>📄 Dados do Boleto</h3>
-      <input type="number" id="valorOriginal" placeholder="Valor Original" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
-      <input type="date" id="dataVencimento" placeholder="Data de Vencimento" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
-      <input type="number" id="diasVencidos" placeholder="Dias Vencidos" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
-      <input type="number" id="juros" placeholder="Juros" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
-      <input type="number" id="multa" placeholder="Multa" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
-      <input type="number" id="taxa" placeholder="Taxa de Serviço" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px">
-      <input type="number" id="valorFinal" placeholder="Valor Total (R$)" readonly style="width:100%;padding:16px;margin:8px 0;border:2px solid #CCC;border-radius:10px;font-size:17px;font-weight:bold;background:#E8F0F8">
-    </div>
-
-    <button id="btn" disabled>🔍 Processar Boleto</button>
-    <div id="res" class="oculto"></div>
-  </div>
-
-  <footer>
-    <p>© Caixa Econômica Federal — Serviço de Pagamento de Boletos</p>
-  </footer>
-
+    <div id="status" role="status" aria-live="polite">Aguardando leitura do boleto.</div>
+    <section id="resultado" class="oculto">
+      <h2>Dados identificados</h2>
+      <dl id="dadosBoleto"></dl>
+      <div class="aviso">
+        <strong>Importante:</strong> a leitura não confirma o beneficiário, os encargos atualizados nem a quitação. Esses dados dependem de consulta autenticada ao credor ou à instituição de liquidação.
+      </div>
+      <button type="button" id="copiarDados" class="secundario">Copiar dados técnicos</button>
+    </section>
+    <section class="etapas">
+      <h2>Etapas para pagamento seguro</h2>
+      <ol>
+        <li>Identificar o boleto e validar seus dígitos.</li>
+        <li>Consultar o beneficiário e a dívida em fonte autorizada.</li>
+        <li>Receber o valor atualizado e as instruções oficiais de pagamento.</li>
+        <li>Autorizar o pagamento pelo banco ou meio habilitado.</li>
+        <li>Confirmar a liquidação e a baixa com o credor.</li>
+      </ol>
+    </section>
+  </main>
+  <footer>Plataforma independente de leitura. Não representa nem se apresenta como banco, lotérica ou instituição de pagamento.</footer>
   <script src="https://unpkg.com/@zxing/browser@0.1.5/umd/index.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="js/app.js"></script>
