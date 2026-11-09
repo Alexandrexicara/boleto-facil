@@ -108,7 +108,7 @@ async function lerCodigoDeBarras(file) {
 async function lerTextoOCR(file) {
   if (!window.Tesseract) throw new Error('Biblioteca OCR não carregada. Verifique sua conexão e recarregue a página.');
   const resultado = await Tesseract.recognize(file, 'por+eng', {
-    logger: info => { if (info.status === 'recognizing text') btnProcessar.textContent = '⏳ OCR ' + Math.round((info.progress || 0) * 100) + '%'; }
+    logger: info => { if (info.status === 'recognizing text') btnProcessar.textContent = '⏳ Lendo código de barras...'; }
   });
   return String(resultado.data?.text || '').trim();
 }
@@ -180,14 +180,14 @@ btnProcessar.addEventListener('click', async () => {
 
   btnProcessar.disabled = true;
   btnProcessar.textContent = '⏳ Lendo código de barras...';
-  res.innerHTML = '⏳ Tentando código de barras; se necessário, faremos OCR do boleto inteiro...';
+  res.innerHTML = '⏳ Lendo o código de barras automaticamente...';
   res.classList.remove('oculto');
 
   try {
     let codigo = await lerCodigoDeBarras(file);
     let textoOCR = '';
     if (!codigo) {
-      res.innerHTML = '<p>🔎 Código não localizado. Iniciando leitura OCR do documento inteiro...</p>';
+      res.innerHTML = '⏳ Lendo o código de barras automaticamente...';
       textoOCR = await lerTextoOCR(file);
       codigo = localizarCodigoNoTexto(textoOCR);
     }
@@ -272,21 +272,12 @@ function mostrarResultados(dados) {
       <p><strong>💳 Total estimado:</strong> R$ ${calc.total.toFixed(2).replace('.', ',')}</p>
       <p style="font-size:12px;color:#8a4b08">${dados.avisoCalculo || 'O valor exato deve ser confirmado com o beneficiário.'}</p>
       <hr>
-      <p><strong>🏦 Banco:</strong> ${dados.banco || 'Não identificado'}</p>
-      <p><strong>👤 Beneficiário:</strong> ${dados.beneficiario || 'Conferir no documento'}</p>
-      <p><strong>🧾 CPF/CNPJ do beneficiário:</strong> ${dados.cpfCnpjBeneficiario || 'Não identificado'}</p>
-      <p><strong>📋 Código/linha identificada:</strong> ${dados.codigoRecebido || 'Não identificado'}</p>
-      <details><summary>Ver texto completo reconhecido pelo OCR</summary><pre style="white-space:pre-wrap;max-height:320px;overflow:auto">${String(dados.textoReconhecido || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) || 'OCR sem texto adicional.'}</pre></details>
+      <p><strong>📋 Código recebido:</strong> ${dados.codigoRecebido}</p>
     </div>
   `;
 
-  if (dados.pagamentoHabilitado === false) {
-    btnProcessar.disabled = true;
-    btnProcessar.textContent = '⚠️ Pagamento depende do convênio';
-  } else {
-    btnProcessar.disabled = false;
-    btnProcessar.textContent = '💳 Gerar Pix';
-  }
+  btnProcessar.disabled = dados.pagamentoHabilitado === false;
+  btnProcessar.textContent = '💳 Gerar Pix';
 }
 
 function calcularValorFinal(valorOriginal, dataVenc) {
