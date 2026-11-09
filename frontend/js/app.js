@@ -94,7 +94,7 @@ function mostrar(d){
  adicionarLinha('CPF/CNPJ do beneficiário',d.cpfCnpjBeneficiario);
  adicionarLinha('Pagador',d.pagador);
  adicionarLinha('CPF/CNPJ do pagador',d.cpfCnpjPagador);
- adicionarLinha('Banco emissor (código COMPE)',typeof d.banco==='object'?d.banco.codigo:d.banco);
+ adicionarLinha('Banco emissor (código COMPE)',d.banco==null?null:(typeof d.banco==='object'?(d.banco.codigo??d.banco.nome??JSON.stringify(d.banco)):d.banco));
  adicionarLinha('Valor original / nominal',moeda(d.valorOriginal));
  adicionarLinha('Valor impresso reconhecido pelo OCR',moeda(d.valorLidoOCR));
  adicionarLinha('Data de vencimento',dataBR(d.dataVencimento||d.vencimentoLidoOCR));
