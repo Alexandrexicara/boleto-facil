@@ -95,14 +95,26 @@ function extrairDadosDoCodigoBarras(value) {
   };
 }
 
+function extrairCamposOCR(texto) {
+  const linhas = String(texto || '').split(/\r?\n/).map(v => v.trim()).filter(Boolean);
+  const juntar = linhas.join(' ');
+  const cpf = juntar.match(/(?:CPF|CNPJ)(?:\s*\/\s*CPF)?\s*[:.]?\s*([\d.\/-]{11,18})/i);
+  const valor = juntar.match(/(?:valor\s*(?:do\s*)?documento|valor\s*cobrado|valor\s*a\s*pagar|valor\s*nominal)\s*[:R$\s]*([\d.]+,\d{2})/i);
+  const venc = juntar.match(/(?:vencimento|pagar\s*at[eé])\s*[:.]?\s*(\d{2}\/\d{2}\/\d{4})/i);
+  const beneficiario = juntar.match(/(?:benefici[aá]rio|cedente|favorecido)\s*[:.]?\s*([^\n]{3,100})/i);
+  const dataIso = venc ? venc[1].split('/').reverse().join('-') : null;
+  return { cpfCnpjBeneficiario: cpf ? cpf[1].replace(/\s/g, '') : null, valorImpresso: valor ? Number(valor[1].replace(/\./g, '').replace(',', '.')) : null, vencimentoImpresso: dataIso, beneficiario: beneficiario ? beneficiario[1].trim().slice(0, 100) : null };
+}
 router.post('/ler', upload.single('foto'), async (req, res) => {
   try {
     const received = digits(req.body?.codigoBarras);
+    const textoOCR = String(req.body?.textoOCR || '').slice(0, 20000);
+    const camposOCR = extrairCamposOCR(textoOCR);
     if (![44, 47, 48].includes(received.length)) {
       return res.status(400).json({ erro: 'Código incompleto. Informe o código de barras bancário (44 dígitos) ou a linha digitável (47 dígitos).' });
     }
     if (received.length === 48) {
-      return res.status(422).json({ erro: 'Código de arrecadação/convênio detectado. Esse formato possui regras próprias e não será interpretado como boleto bancário.' });
+      return res.json({ sucesso: true, tipoBoleto: 'arrecadacao', codigoRecebido: received, banco: null, valorOriginal: camposOCR.valorImpresso, dataVencimento: camposOCR.vencimentoImpresso, diasVencidos: 0, juros: 0, multa: 0, taxaServico: 0, valorFinal: camposOCR.valorImpresso, beneficiario: camposOCR.beneficiario, cpfCnpjBeneficiario: camposOCR.cpfCnpjBeneficiario, textoReconhecido: textoOCR, calculoEstimado: false, pagamentoHabilitado: false, avisoCalculo: 'Boleto de arrecadação/convênio identificado. Os campos foram extraídos por OCR quando legíveis; a validação e o cálculo dependem das regras específicas do convênio/emissor.' });
     }
     const normalized = normalizarCodigoBarras(received);
     if (!normalized) return res.status(422).json({ erro: 'Linha digitável inválida: um dos dígitos verificadores dos campos não confere.' });
@@ -115,7 +127,10 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
       valorOriginal: data.valor, dataVencimento: data.vencimentoFormatado,
       diasVencidos: calc.dias, juros: calc.juros, multa: calc.multa,
       taxaServico: calc.taxa, valorFinal: calc.total, calculoEstimado: true,
-      avisoCalculo: calc.aviso, requerConsultaEmissor: true
+      avisoCalculo: calc.aviso, requerConsultaEmissor: true,
+      beneficiario: camposOCR.beneficiario, cpfCnpjBeneficiario: camposOCR.cpfCnpjBeneficiario,
+      valorLidoOCR: camposOCR.valorImpresso, vencimentoLidoOCR: camposOCR.vencimentoImpresso,
+      textoReconhecido: textoOCR, pagamentoHabilitado: true
     });
   } catch (error) {
     console.error('Erro ao ler boleto:', error);
