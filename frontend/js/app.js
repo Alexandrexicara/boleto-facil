@@ -141,6 +141,10 @@ fotoInput.addEventListener('change', async (e) => {
 
 btnProcessar.addEventListener('click', async () => {
   if (boletoAtual) {
+    if (boletoAtual.pagamentoHabilitado === false) {
+      alert('Este documento foi identificado, mas a validação e o pagamento ainda dependem das regras do convênio/emissor.');
+      return;
+    }
     const cpfCnpj = document.getElementById('cpfCnpj').value.trim();
     const email = document.getElementById('emailUsuario').value.trim();
 
@@ -266,8 +270,13 @@ function mostrarResultados(dados) {
     </div>
   `;
 
-  btnProcessar.disabled = false;
-  btnProcessar.textContent = '💳 Gerar Pix';
+  if (dados.pagamentoHabilitado === false) {
+    btnProcessar.disabled = true;
+    btnProcessar.textContent = '⚠️ Pagamento depende do convênio';
+  } else {
+    btnProcessar.disabled = false;
+    btnProcessar.textContent = '💳 Gerar Pix';
+  }
 }
 
 function calcularValorFinal(valorOriginal, dataVenc) {
