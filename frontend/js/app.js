@@ -114,11 +114,17 @@ async function lerTextoOCR(file) {
 }
 function localizarCodigoNoTexto(texto) {
   const linhas = String(texto || '').split(/\r?\n/);
-  for (const linha of linhas) { const digitos = linha.replace(/\D/g, ''); for (const tamanho of [47, 48, 44]) if (digitos.length >= tamanho) return digitos.slice(0, tamanho); }
-  const total = String(texto || '').replace(/\D/g, '');
-  for (const tamanho of [47, 48, 44]) if (total.length >= tamanho) return total.slice(0, tamanho);
+  for (const linha of linhas) {
+    const digitos = linha.replace(/\D/g, '');
+    if ([48, 47, 44].includes(digitos.length)) return digitos;
+  }
+  for (const linha of linhas) {
+    const digitos = linha.replace(/\D/g, '');
+    for (const tamanho of [48, 47, 44]) if (digitos.length > tamanho && digitos.length <= tamanho + 2) return digitos.slice(0, tamanho);
+  }
   return null;
 }
+
 fotoInput.addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
