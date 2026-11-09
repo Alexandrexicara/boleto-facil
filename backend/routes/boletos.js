@@ -107,13 +107,41 @@ function extrairCandidatos(texto) {
   compact.forEach(v => found.add(v));
   return Array.from(found);
 }
+function textoDaRespostaNvidia(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map(item => {
+    if (typeof item === 'string') return item;
+    if (item && typeof item.text === 'string') return item.text;
+    if (item && item.type === 'json') return JSON.stringify(item.json || item);
+    return '';
+  }).filter(Boolean).join('\n');
+  if (content && typeof content === 'object') {
+    if (typeof content.text === 'string') return content.text;
+    if (content.json && typeof content.json === 'object') return JSON.stringify(content.json);
+    return JSON.stringify(content);
+  }
+  return '';
+}
 function extrairJson(text) {
-  if (typeof text !== 'string') return null;
-  const cleaned = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+  if (text && typeof text === 'object' && !Array.isArray(text)) return text;
+  const source = textoDaRespostaNvidia(text);
+  const cleaned = source.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
   try { return JSON.parse(cleaned); } catch (_) {}
   const start = cleaned.indexOf('{'), end = cleaned.lastIndexOf('}');
-  if (start >= 0 && end > start) { try { return JSON.parse(cleaned.slice(start, end + 1)); } catch (_) {} }
+  if (start >= 0 && end > start) {
+    const candidate = cleaned.slice(start, end + 1).replace(/,\s*([}\]])/g, '$1');
+    try { return JSON.parse(candidate); } catch (_) {}
+  }
   return null;
+}
+function classificarDocumento(dadosIA, texto) {
+  const informado = String(dadosIA && dadosIA.tipo_documento || '').toLowerCase();
+  if (informado && !/não identificado|nao identificado|unknown|outro/.test(informado)) return informado;
+  const t = String(texto || '').toLowerCase();
+  if (/copasa|conta\s+de\s+água|conta\s+de\s+agua|consumo\s+de\s+água|consumo\s+de\s+agua|esgoto|energia elétrica|energia eletrica|distribuição de gás|distribuicao de gas/.test(t)) return 'conta_consumo';
+  if (/arrecadação|arrecadacao|tributo|concessionária|concessionaria|convênio|convenio/.test(t)) return 'arrecadacao';
+  if (/boleto|linha digitável|linha digitavel|beneficiário|beneficiario|cedente/.test(t)) return 'boleto_bancario';
+  return informado || 'não identificado';
 }
 async function interpretarComNvidia(file) {
   const key = process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY || process.env.NGC_API_KEY;
@@ -145,10 +173,16 @@ async function interpretarComNvidia(file) {
     timeout: 90000,
     maxBodyLength: 20 * 1024 * 1024
   });
-  const content = response.data && response.data.choices && response.data.choices[0] &&
-    response.data.choices[0].message && response.data.choices[0].message.content;
-  const parsed = extrairJson(content);
-  if (!parsed) throw new Error('A NVIDIA não retornou os campos no formato esperado.');
+  const choice = response.data && response.data.choices && response.data.choices[0];
+  const message = choice && choice.message;
+  const content = message && message.content;
+  const parsed = extrairJson(content) || extrairJson(response.data && response.data.output_text);
+  if (!parsed) {
+    const preview = textoDaRespostaNvidia(content).slice(0, 500).replace(/\s+/g, ' ');
+    const finish = choice && choice.finish_reason ? String(choice.finish_reason) : 'sem finish_reason';
+    console.error('Resposta NVIDIA sem JSON válido:', JSON.stringify({ model, finish_reason: finish, content_type: typeof content, preview }));
+    throw new Error('A NVIDIA respondeu, mas o conteúdo não veio em JSON válido (modelo: ' + model + ', finalização: ' + finish + ').');
+  }
   return parsed;
 }
 function valorNumerico(value) {
@@ -182,7 +216,7 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
     const aiCode = dadosIA ? digits(dadosIA.linha_digitavel || dadosIA.codigo_barras || '') : '';
     const candidates = [received, aiCode].concat(extrairCandidatos(textoOCR)).filter(code => [44, 47, 48].includes(code.length));
     let codigoIdentificado = candidates[0] || '', codigoValidado = false, dadosCodigo = null;
-    let tipoBoleto = dadosIA && dadosIA.tipo_documento ? String(dadosIA.tipo_documento) : 'não identificado';
+    let tipoBoleto = classificarDocumento(dadosIA, textoOCR);
     let banco = dadosIA ? textoSeguro(dadosIA.banco) : null;
     for (const candidate of candidates) {
       if (candidate.length === 48) { codigoIdentificado = candidate; tipoBoleto = 'arrecadacao'; break; }
@@ -212,12 +246,14 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
       return res.status(400).json({ erro: 'Envie a foto do boleto ou informe a linha digitável.' });
     }
     const statusLeitura = codigoValidado || beneficiario || valorOriginal !== null || dataVencimento ? 'dados_identificados' : 'leitura_parcial';
+    const motorLeitura = dadosIA ? 'NVIDIA Vision + validação local' : 'OCR local / leitura de código';
     const idLeitura = await registrarLeitura({
-      tipo: tipoBoleto, status: statusLeitura, origem: file ? 'imagem' : 'camera_ou_codigo', codigoValidado
+      tipo: tipoBoleto, status: statusLeitura, origem: file ? 'imagem' : 'camera_ou_codigo',
+      codigoValidado, motor: motorLeitura, erro: erroIA
     });
     return res.json({
       sucesso: true, idLeitura, statusLeitura,
-      motorLeitura: dadosIA ? 'NVIDIA Vision + validação local' : 'OCR local / leitura de código',
+      motorLeitura,
       tipoBoleto, banco, beneficiario, cpfCnpjBeneficiario: cpfCnpj, pagador, cpfCnpjPagador,
       valorOriginal, valorLidoOCR: camposOCR.valorImpresso, dataVencimento,
       vencimentoLidoOCR: camposOCR.vencimentoImpresso, dataEmissao, nossoNumero,
