@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const axios = require('axios');
 const { registrarLeitura } = require('../config/database');
+const { avaliarAutenticidade, validarCNPJ } = require('../services/antifraude');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 const DAY = 86400000;
 const LEGACY_BASE = Date.UTC(1997, 9, 7);
@@ -153,12 +154,12 @@ async function interpretarComNvidia(file, modoDiagnostico = false) {
   const mime = file.mimetype && file.mimetype.startsWith('image/') ? file.mimetype : 'image/jpeg';
   const image = 'data:' + mime + ';base64,' + file.buffer.toString('base64');
   const prompt = [
-    'TAREFA RESTRITA: leia somente os campos financeiros e os identificadores de pagamento impressos no documento.',
-    'Ignore completamente cabeçalho, logotipo, nome/endereço do beneficiário e pagador, propaganda, avisos, mensagens institucionais, tabelas de qualidade, consumo, histórico e qualquer texto que não seja necessário para pagar ou recalcular a cobrança.',
+    'TAREFA: leia os identificadores do pagamento E os dados de identificação do beneficiário impressos no documento.',
+    'Ignore propaganda, avisos e textos sem relação com a cobrança. Capture cuidadosamente o nome/razão social do beneficiário, CNPJ/CPF do beneficiário, nome e documento do beneficiário final (se houver), nome do banco emissor e dados financeiros. Não confunda dados do pagador com os do beneficiário.',
     'Procure a linha digitável e o código de barras (normalmente na faixa inferior do boleto), o QR Code Pix e os campos próximos a VALOR, VALOR DO DOCUMENTO, VENCIMENTO, MULTA, JUROS e DESCONTO.',
     'Retorne SOMENTE JSON válido, sem Markdown, sem transcrição do documento e sem explicações.',
-    'Use exatamente estas chaves: linha_digitavel, codigo_barras, qr_code_pix, valor_original, vencimento, multa_percentual, multa_valor, juros_percentual, juros_valor, juros_regra, desconto_valor, desconto_data_limite.',
-    'Todos os campos devem ser null quando ausentes, ilegíveis ou não confirmados. Não deduza taxas, percentuais ou regras.',
+    'Use exatamente estas chaves: linha_digitavel, codigo_barras, qr_code_pix, banco_emissor, beneficiario_nome, beneficiario_cnpj_cpf, beneficiario_final_nome, beneficiario_final_cnpj_cpf, pagador_nome, pagador_cnpj_cpf, valor_original, vencimento, multa_percentual, multa_valor, juros_percentual, juros_valor, juros_regra, desconto_valor, desconto_data_limite.',
+    'Todos os campos devem ser null quando ausentes, ilegíveis ou não confirmados. Não deduza taxas, percentuais ou regras. Para CNPJ/CPF, retorne somente os dígitos que estiverem legíveis; não complete números.',
     'Datas em YYYY-MM-DD. Valores em número decimal sem símbolo de moeda. Percentuais em número decimal (ex.: 2 para 2%).',
     'Nunca invente nem complete dígitos. Só informe código de barras ou linha digitável quando todos os dígitos estiverem legíveis e na ordem correta.',
     'Para qr_code_pix, informe o conteúdo Pix copia e cola somente se estiver efetivamente codificado e legível; caso contrário null.',
@@ -278,6 +279,13 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
     // e o código lido diretamente pelo leitor de barras/QR do navegador.
     const textoOCR = '';
     const camposOCR = { cpfCnpjBeneficiario: null, valorImpresso: null, vencimentoImpresso: null, beneficiario: null };
+    const beneficiario = dadosIA ? textoSeguro(dadosIA.beneficiario_nome) : null;
+    const cnpjBeneficiario = dadosIA ? digits(dadosIA.beneficiario_cnpj_cpf) : '';
+    const beneficiarioFinal = dadosIA ? textoSeguro(dadosIA.beneficiario_final_nome) : null;
+    const cnpjBeneficiarioFinal = dadosIA ? digits(dadosIA.beneficiario_final_cnpj_cpf) : '';
+    const bancoEmissor = dadosIA ? textoSeguro(dadosIA.banco_emissor) : null;
+    const pagador = dadosIA ? textoSeguro(dadosIA.pagador_nome) : null;
+    const documentoPagador = dadosIA ? digits(dadosIA.pagador_cnpj_cpf) : '';
     const aiCode = dadosIA ? digits(dadosIA.linha_digitavel || dadosIA.codigo_barras || '') : '';
     const candidates = [received, aiCode].filter(code => [44, 47, 48].includes(code.length));
     const qrCodePix = textoSeguro((dadosIA && dadosIA.qr_code_pix) || req.body && req.body.qrCodePix);
@@ -311,7 +319,11 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
     if (!file && !textoOCR && !codigoIdentificado) {
       return res.status(400).json({ erro: 'Envie a foto do boleto ou informe a linha digitável.' });
     }
-    const statusLeitura = codigoValidado || qrCodePix || valorOriginal !== null || dataVencimento ? 'dados_identificados' : 'leitura_parcial';
+    const verificacaoAutenticidade = avaliarAutenticidade({
+      beneficiario, cnpjBeneficiario, beneficiarioFinal, cnpjBeneficiarioFinal,
+      codigoValidado, qrCodePix, fonteExternaConsultada: false
+    });
+    const statusLeitura = codigoValidado || qrCodePix || valorOriginal !== null || dataVencimento || beneficiario || cnpjBeneficiario ? 'dados_identificados' : 'leitura_parcial';
     const motorLeitura = dadosIA ? 'NVIDIA Vision + validação local' : 'OCR local / leitura de código';
     const idLeitura = await registrarLeitura({
       tipo: tipoBoleto, status: statusLeitura, origem: file ? 'imagem' : 'camera_ou_codigo',
@@ -322,6 +334,12 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
       motorLeitura,
       diagnosticoIA,
       tipoBoleto, valorOriginal, dataVencimento,
+      beneficiario, cnpjBeneficiario: cnpjBeneficiario || null,
+      cnpjBeneficiarioValido: cnpjBeneficiario ? validarCNPJ(cnpjBeneficiario) : null,
+      beneficiarioFinal, cnpjBeneficiarioFinal: cnpjBeneficiarioFinal || null,
+      cnpjBeneficiarioFinalValido: cnpjBeneficiarioFinal ? validarCNPJ(cnpjBeneficiarioFinal) : null,
+      bancoEmissor, pagador, documentoPagador: documentoPagador || null,
+      verificacaoAutenticidade,
       multaPercentual, multaValor, jurosPercentual, jurosValor, jurosRegra,
       descontoValor, descontoDataLimite, qrCodePix,
       diasVencidos: null, juros: null, multa: null, taxaServico: null,
@@ -332,6 +350,13 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
         linha_digitavel: dadosIA.linha_digitavel || null,
         codigo_barras: dadosIA.codigo_barras || null,
         qr_code_pix: dadosIA.qr_code_pix || null,
+        banco_emissor: dadosIA.banco_emissor || null,
+        beneficiario_nome: dadosIA.beneficiario_nome || null,
+        beneficiario_cnpj_cpf: dadosIA.beneficiario_cnpj_cpf || null,
+        beneficiario_final_nome: dadosIA.beneficiario_final_nome || null,
+        beneficiario_final_cnpj_cpf: dadosIA.beneficiario_final_cnpj_cpf || null,
+        pagador_nome: dadosIA.pagador_nome || null,
+        pagador_cnpj_cpf: dadosIA.pagador_cnpj_cpf || null,
         valor_original: dadosIA.valor_original ?? null,
         vencimento: dadosIA.vencimento || null,
         multa_percentual: dadosIA.multa_percentual ?? null,
