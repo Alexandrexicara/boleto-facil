@@ -344,7 +344,7 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
       descontoValor, descontoDataLimite, qrCodePix,
       diasVencidos: null, juros: null, multa: null, taxaServico: null,
       valorFinal: null, calculoEstimado: false, avisoCalculo: calculo.aviso,
-      codigoRecebido: codigoIdentificado || null, codigoValidado, pagamentoHabilitado: false,
+      codigoRecebido: codigoIdentificado || null, codigoValidado, codigoBanco: dadosCodigo ? dadosCodigo.banco : null, pagamentoHabilitado: false,
       textoReconhecido: null, textoCompleto: null,
       camposIA: dadosIA ? {
         linha_digitavel: dadosIA.linha_digitavel || null,
