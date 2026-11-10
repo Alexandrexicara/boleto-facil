@@ -20,13 +20,13 @@ test('não declara autenticidade sem fonte bancária externa', () => {
   assert.equal(resultado.fonteExternaConsultada, false);
 });
 
-test('sinaliza divergência entre nome do beneficiário e beneficiário final', () => {
+test('pede conferência quando os nomes extraídos divergem, sem declarar fraude', () => {
   const resultado = avaliarAutenticidade({
     beneficiario: 'Empresa Alfa Ltda',
     beneficiarioFinal: 'Pessoa Desconhecida',
     cnpjBeneficiario: '11.222.333/0001-81',
     codigoValidado: true
   });
-  assert.equal(resultado.status, 'suspeita_de_divergencia');
+  assert.equal(resultado.status, 'atencao');
   assert.equal(resultado.autenticidadeConfirmada, false);
 });
