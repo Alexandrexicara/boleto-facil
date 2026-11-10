@@ -153,16 +153,16 @@ async function interpretarComNvidia(file, modoDiagnostico = false) {
   const mime = file.mimetype && file.mimetype.startsWith('image/') ? file.mimetype : 'image/jpeg';
   const image = 'data:' + mime + ';base64,' + file.buffer.toString('base64');
   const prompt = [
-    'Analise visualmente esta imagem de documento brasileiro de cobrança.',
-    'Identifique primeiro se é boleto bancário, conta de consumo, arrecadação ou outro documento.',
-    'Retorne SOMENTE um objeto JSON válido, sem Markdown e sem explicações.',
-    'Use exatamente estas chaves: tipo_documento, linha_digitavel, codigo_barras, banco, beneficiario, cpf_cnpj_beneficiario, pagador, cpf_cnpj_pagador, valor, vencimento, data_emissao, nosso_numero, numero_documento, agencia_codigo_beneficiario, alertas.',
-    'Não inclua transcrição integral, texto_completo, resumo longo nem campos adicionais.',
-    'Use null para campos ausentes ou ilegíveis. alertas deve ser uma lista curta.',
-    'Datas em YYYY-MM-DD e valor como número decimal.',
-    'Nunca invente dígitos. Só informe linha_digitavel ou codigo_barras se todos os dígitos estiverem visualmente legíveis.',
-    'Diferencie conta de água, luz ou gás de boleto bancário. Não invente banco para conta de consumo.',
-    'Não calcule juros, multa nem valor atualizado; informe somente valores impressos.'
+    'TAREFA RESTRITA: leia somente os campos financeiros e os identificadores de pagamento impressos no documento.',
+    'Ignore completamente cabeçalho, logotipo, nome/endereço do beneficiário e pagador, propaganda, avisos, mensagens institucionais, tabelas de qualidade, consumo, histórico e qualquer texto que não seja necessário para pagar ou recalcular a cobrança.',
+    'Procure a linha digitável e o código de barras (normalmente na faixa inferior do boleto), o QR Code Pix e os campos próximos a VALOR, VALOR DO DOCUMENTO, VENCIMENTO, MULTA, JUROS e DESCONTO.',
+    'Retorne SOMENTE JSON válido, sem Markdown, sem transcrição do documento e sem explicações.',
+    'Use exatamente estas chaves: linha_digitavel, codigo_barras, qr_code_pix, valor_original, vencimento, multa_percentual, multa_valor, juros_percentual, juros_valor, juros_regra, desconto_valor, desconto_data_limite.',
+    'Todos os campos devem ser null quando ausentes, ilegíveis ou não confirmados. Não deduza taxas, percentuais ou regras.',
+    'Datas em YYYY-MM-DD. Valores em número decimal sem símbolo de moeda. Percentuais em número decimal (ex.: 2 para 2%).',
+    'Nunca invente nem complete dígitos. Só informe código de barras ou linha digitável quando todos os dígitos estiverem legíveis e na ordem correta.',
+    'Para qr_code_pix, informe o conteúdo Pix copia e cola somente se estiver efetivamente codificado e legível; caso contrário null.',
+    'Não calcule juros, multa, desconto nem valor atualizado. Esta etapa é exclusivamente de identificação dos dados impressos.'
   ].join(' ');
   const maxTokensSolicitados = Math.min(131072, Math.max(1024, Number.parseInt(process.env.NVIDIA_MAX_OUTPUT_TOKENS || '16384', 10) || 16384));
   const requestConfig = {
@@ -274,11 +274,13 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
         console.error('Falha na leitura visual NVIDIA:', erroIA);
       }
     }
-    const textoIA = dadosIA ? String(dadosIA.texto_completo || dadosIA.texto_reconhecido || '').slice(0, 20000) : '';
-    const textoOCR = [textoIA, localOCR].filter(Boolean).join('\n').slice(0, 20000);
-    const camposOCR = extrairCamposOCR(textoOCR);
+    // A extração não usa OCR de página inteira: somente os campos financeiros retornados pela IA
+    // e o código lido diretamente pelo leitor de barras/QR do navegador.
+    const textoOCR = '';
+    const camposOCR = { cpfCnpjBeneficiario: null, valorImpresso: null, vencimentoImpresso: null, beneficiario: null };
     const aiCode = dadosIA ? digits(dadosIA.linha_digitavel || dadosIA.codigo_barras || '') : '';
-    const candidates = [received, aiCode].concat(extrairCandidatos(textoOCR)).filter(code => [44, 47, 48].includes(code.length));
+    const candidates = [received, aiCode].filter(code => [44, 47, 48].includes(code.length));
+    const qrCodePix = textoSeguro((dadosIA && dadosIA.qr_code_pix) || req.body && req.body.qrCodePix);
     let codigoIdentificado = candidates[0] || '', codigoValidado = false, dadosCodigo = null;
     let tipoBoleto = classificarDocumento(dadosIA, textoOCR);
     let banco = dadosIA ? textoSeguro(dadosIA.banco) : null;
@@ -294,11 +296,20 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
     if (codigoIdentificado.length === 48) tipoBoleto = 'arrecadacao';
     const beneficiario = textoSeguro((dadosIA && dadosIA.beneficiario) || camposOCR.beneficiario);
     const cpfCnpj = textoSeguro((dadosIA && (dadosIA.cpf_cnpj_beneficiario || dadosIA.cpfCnpjBeneficiario)) || camposOCR.cpfCnpjBeneficiario);
-    const valorIA = dadosIA ? valorNumerico(dadosIA.valor) : null;
-    const valorOriginal = dadosCodigo ? dadosCodigo.valor : (valorIA !== null ? valorIA : camposOCR.valorImpresso);
+    const valorIA = dadosIA ? valorNumerico(dadosIA.valor_original) : null;
+    const valorOriginal = dadosCodigo ? dadosCodigo.valor : valorIA;
     const vencimentoIA = dadosIA ? normalizarData(dadosIA.vencimento) : null;
-    const dataVencimento = dadosCodigo && dadosCodigo.vencimentoFormatado ? dadosCodigo.vencimentoFormatado : (vencimentoIA || camposOCR.vencimentoImpresso);
-    const calculo = calcularValorFinal(valorOriginal, dataVencimento);
+    const dataVencimento = dadosCodigo && dadosCodigo.vencimentoFormatado ? dadosCodigo.vencimentoFormatado : vencimentoIA;
+    const multaPercentual = dadosIA ? valorNumerico(dadosIA.multa_percentual) : null;
+    const multaValor = dadosIA ? valorNumerico(dadosIA.multa_valor) : null;
+    const jurosPercentual = dadosIA ? valorNumerico(dadosIA.juros_percentual) : null;
+    const jurosValor = dadosIA ? valorNumerico(dadosIA.juros_valor) : null;
+    const jurosRegra = dadosIA ? textoSeguro(dadosIA.juros_regra) : null;
+    const descontoValor = dadosIA ? valorNumerico(dadosIA.desconto_valor) : null;
+    const descontoDataLimite = dadosIA ? normalizarData(dadosIA.desconto_data_limite) : null;
+    // O cálculo é uma etapa posterior. Não somar encargos presumidos nesta leitura inicial.
+    const calculo = { dias: null, juros: null, multa: null, taxa: null, total: null,
+      calculoEstimado: false, aviso: 'Dados extraídos. O recálculo será executado em uma etapa posterior, após validar as regras do beneficiário.' };
     const pagador = dadosIA ? textoSeguro(dadosIA.pagador) : null;
     const cpfCnpjPagador = dadosIA ? textoSeguro(dadosIA.cpf_cnpj_pagador || dadosIA.cpfCnpjPagador) : null;
     const dataEmissao = dadosIA ? normalizarData(dadosIA.data_emissao) : null;
@@ -320,14 +331,28 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
       motorLeitura,
       diagnosticoIA,
       tipoBoleto, banco, beneficiario, cpfCnpjBeneficiario: cpfCnpj, pagador, cpfCnpjPagador,
-      valorOriginal, valorLidoOCR: camposOCR.valorImpresso, dataVencimento,
-      vencimentoLidoOCR: camposOCR.vencimentoImpresso, dataEmissao, nossoNumero,
-      numeroDocumento, agenciaCodigoBeneficiario, diasVencidos: calculo.dias,
-      juros: calculo.juros, multa: calculo.multa, taxaServico: calculo.taxa,
-      valorFinal: calculo.total, calculoEstimado: calculo.calculoEstimado, avisoCalculo: calculo.aviso,
+      valorOriginal, dataVencimento,
+      multaPercentual, multaValor, jurosPercentual, jurosValor, jurosRegra,
+      descontoValor, descontoDataLimite, qrCodePix,
+      diasVencidos: null, juros: null, multa: null, taxaServico: null,
+      valorFinal: null, calculoEstimado: false, avisoCalculo: calculo.aviso,
       codigoRecebido: codigoIdentificado || null, codigoValidado, pagamentoHabilitado: false,
-      textoReconhecido: textoOCR || null, textoCompleto: textoOCR || null,
-      camposIA: dadosIA, confianca: dadosIA ? (dadosIA.confianca || null) : null,
+      textoReconhecido: null, textoCompleto: null,
+      camposIA: dadosIA ? {
+        linha_digitavel: dadosIA.linha_digitavel || null,
+        codigo_barras: dadosIA.codigo_barras || null,
+        qr_code_pix: dadosIA.qr_code_pix || null,
+        valor_original: dadosIA.valor_original ?? null,
+        vencimento: dadosIA.vencimento || null,
+        multa_percentual: dadosIA.multa_percentual ?? null,
+        multa_valor: dadosIA.multa_valor ?? null,
+        juros_percentual: dadosIA.juros_percentual ?? null,
+        juros_valor: dadosIA.juros_valor ?? null,
+        juros_regra: dadosIA.juros_regra || null,
+        desconto_valor: dadosIA.desconto_valor ?? null,
+        desconto_data_limite: dadosIA.desconto_data_limite || null
+      } : null,
+      confianca: null,
       alertas, avisoIA: erroIA ? 'A leitura NVIDIA não respondeu; foram usados os dados do OCR local. ' + erroIA : null
     });
   } catch (error) {
