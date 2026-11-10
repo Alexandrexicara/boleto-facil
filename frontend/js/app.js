@@ -33,25 +33,6 @@ function mostrarTextoOCR(texto){
  const painel=criarPainelProcessamento();
  painel.querySelector('#processamentoTexto').textContent=texto||'Nenhum texto legível foi extraído nesta etapa.';
 }
-function linhasCandidatas(texto){
- const s=String(texto||''),out=new Set();
- for(const m of s.matchAll(/(?:\d[\s.-]?){43,47}\d/g)){const d=digitos(m[0]);if([44,47,48].includes(d.length))out.add(d);}
- for(const m of s.matchAll(/\d{44}|\d{47}|\d{48}/g))out.add(m[0]);
- const grupos=s.match(/\d{4,}/g)||[];
- for(let i=0;i<grupos.length;i++){let junc='';for(let j=i;j<grupos.length&&j<i+8;j++){junc+=grupos[j];if([44,47,48].includes(junc.length))out.add(junc);if(junc.length>=48)break;}}
- return [...out].sort((a,b)=>({44:0,47:1,48:2}[a.length]-({44:0,47:1,48:2}[b.length])));
-}
-async function reconhecerTexto(file){
- if(!window.Tesseract||!window.Tesseract.recognize)throw new Error('O mecanismo OCR não carregou. Verifique a conexão e tente novamente.');
- const r=await window.Tesseract.recognize(file,'por+eng',{logger:m=>{
-  if(!m||!m.status)return;
-  const pct=Number.isFinite(m.progress)?Math.round(m.progress*100):0;
-  const mensagens={'loading tesseract core':'Carregando mecanismo de leitura...', 'initializing tesseract':'Inicializando OCR...', 'loading language traineddata':'Carregando idioma português...', 'initializing api':'Preparando leitura da imagem...', 'recognizing text':'Identificando somente os campos de pagamento...'};
-  const msg=mensagens[m.status]||'Reconhecendo os textos impressos no boleto...';
-  atualizarEtapa(3,msg,25+Math.round(pct*.35));
- }});
- return r&&r.data&&r.data.text?r.data.text:'';
-}
 async function lerCodigoImagem(img){
  if(!window.ZXingBrowser||!window.ZXingBrowser.BrowserMultiFormatReader)return {codigo:'',qrCodePix:''};
  try{
