@@ -53,19 +53,22 @@ async function reconhecerTexto(file){
  return r&&r.data&&r.data.text?r.data.text:'';
 }
 async function lerCodigoImagem(img){
- if(!window.ZXingBrowser||!window.ZXingBrowser.BrowserMultiFormatReader)return '';
+ if(!window.ZXingBrowser||!window.ZXingBrowser.BrowserMultiFormatReader)return {codigo:'',qrCodePix:''};
  try{
-  atualizarEtapa(2,'Procurando o código de barras na imagem...',22);
+  atualizarEtapa(2,'Procurando código de barras e QR Code Pix...',22);
   const reader=new ZXingBrowser.BrowserMultiFormatReader();
   const r=await reader.decodeFromImageElement(img);
-  const code=digitos(r&&r.getText?r.getText():'');
-  return [44,47,48].includes(code.length)?code:'';
- }catch(_){return '';}
+  const raw=String(r&&r.getText?r.getText():'').trim();
+  const code=digitos(raw);
+  if([44,47,48].includes(code.length))return {codigo:code,qrCodePix:''};
+  if(/^000201/.test(raw)||/br\.gov\.bcb\.pix/i.test(raw))return {codigo:'',qrCodePix:raw};
+  return {codigo:'',qrCodePix:''};
+ }catch(_){return {codigo:'',qrCodePix:''};}
 }
-async function interpretar(codigo,textoOCR='',file=null){
+async function interpretar(codigo,qrCodePix='',file=null){
  const fd=new FormData();
  fd.append('codigoBarras',codigo||'');
- fd.append('textoOCR',textoOCR||'');
+ fd.append('qrCodePix',qrCodePix||'');
  if(file)fd.append('foto',file,file.name||'boleto.jpg');
  let response;
  try{response=await fetch(apiBase+'/ler',{method:'POST',body:fd});}
@@ -94,28 +97,21 @@ function mostrar(d){
  adicionarLinha('Tokens NVIDIA (entrada / saída / total)',d.diagnosticoIA?[(d.diagnosticoIA.promptTokens??'—'),(d.diagnosticoIA.completionTokens??'—'),(d.diagnosticoIA.totalTokens??'—')].join(' / '):null);
  adicionarLinha('Limite de saída NVIDIA',d.diagnosticoIA&&d.diagnosticoIA.maxTokensFinal?d.diagnosticoIA.maxTokensFinal+' tokens':null);
  adicionarLinha('Tentativas NVIDIA',d.diagnosticoIA&&d.diagnosticoIA.tentativas?d.diagnosticoIA.tentativas:null);
- adicionarLinha('Beneficiário / favorecido',d.beneficiario);
- adicionarLinha('CPF/CNPJ do beneficiário',d.cpfCnpjBeneficiario);
- adicionarLinha('Pagador',d.pagador);
- adicionarLinha('CPF/CNPJ do pagador',d.cpfCnpjPagador);
- adicionarLinha('Banco emissor (código COMPE)',typeof d.banco==='string'||typeof d.banco==='number'?String(d.banco):(d.banco&&typeof d.banco==='object'?JSON.stringify(d.banco):null));
- adicionarLinha('Valor original / nominal',moeda(d.valorOriginal));
- adicionarLinha('Valor impresso reconhecido pelo OCR',moeda(d.valorLidoOCR));
- adicionarLinha('Data de vencimento',dataBR(d.dataVencimento||d.vencimentoLidoOCR));
- adicionarLinha('Data de emissão',dataBR(d.dataEmissao));
- adicionarLinha('Nosso número',d.nossoNumero);
- adicionarLinha('Número do documento',d.numeroDocumento);
- adicionarLinha('Agência / código do beneficiário',d.agenciaCodigoBeneficiario);
- adicionarLinha('Dias em atraso',d.diasVencidos==null?0:d.diasVencidos);
- adicionarLinha('Juros',moeda(d.juros));
- adicionarLinha('Multa',moeda(d.multa));
- adicionarLinha('Taxa de serviço',moeda(d.taxaServico));
- adicionarLinha('Total atualizado',d.valorFinal==null?'Não calculado: aguardando regras oficiais do beneficiário':moeda(d.valorFinal));
- adicionarLinha('Linha digitável / código identificado',d.codigoRecebido);
+ adicionarLinha('Valor original',moeda(d.valorOriginal));
+ adicionarLinha('Data de vencimento',dataBR(d.dataVencimento));
+ adicionarLinha('Multa (%)',d.multaPercentual==null?null:d.multaPercentual+'%');
+ adicionarLinha('Multa (R$)',moeda(d.multaValor));
+ adicionarLinha('Juros (%)',d.jurosPercentual==null?null:d.jurosPercentual+'%');
+ adicionarLinha('Juros (R$)',moeda(d.jurosValor));
+ adicionarLinha('Regra de juros impressa',d.jurosRegra);
+ adicionarLinha('Desconto (R$)',moeda(d.descontoValor));
+ adicionarLinha('Data limite do desconto',dataBR(d.descontoDataLimite));
+ adicionarLinha('Linha digitável / código de barras',d.codigoRecebido);
  adicionarLinha('Validação dos dígitos',d.codigoValidado?'Dígitos verificadores aprovados':'Não validado ou código não identificado');
+ adicionarLinha('QR Code Pix (copia e cola)',d.qrCodePix);
  adicionarLinha('Confiança da leitura (NVIDIA)',d.confianca?JSON.stringify(d.confianca):null);
  adicionarLinha('Alertas da leitura',Array.isArray(d.alertas)&&d.alertas.length?d.alertas.join(' | '):null);
- adicionarLinha('Texto completo reconhecido',d.textoCompleto||d.textoReconhecido);
+ // Não exibir transcrição geral: o sistema guarda somente os campos de pagamento.
  adicionarLinha('Situação do pagamento','Não pago — a leitura não efetua nem confirma pagamento');
  resultado.classList.remove('oculto');
  setStatus(d.avisoIA||d.avisoCalculo||'Leitura concluída. Confira os dados identificados.');
@@ -173,16 +169,12 @@ async function processarArquivo(file){
   atualizarEtapa(1,'Imagem recebida. Preparando arquivo para leitura...',8);
   await img.decode();
   const codigo=await lerCodigoImagem(img);
-  atualizarEtapa(3,'Lendo o documento inteiro em português e inglês...',25);
-  let texto='',erroOCR=null;
-  try{texto=await reconhecerTexto(file);mostrarTextoOCR(texto);}
-  catch(ocrError){erroOCR=ocrError;mostrarTextoOCR('O OCR local não concluiu: '+(ocrError.message||'falha ao carregar o mecanismo de leitura')+'. A imagem original será enviada à inteligência artificial para tentar a leitura.');}
-  const candidatos=linhasCandidatas(texto);
-  const codigoFinal=codigo||candidatos[0]||'';
-  atualizarEtapa(4,'OCR concluído. Enviando imagem e texto para análise visual da NVIDIA...',65);
-  const data=await interpretar(codigoFinal,texto,file);
+  const codigoFinal=codigo.codigo||'';
+  const qrPix=codigo.qrCodePix||'';
+  atualizarEtapa(4,'Enviando a imagem para extrair somente os dados de pagamento...',65);
+  const data=await interpretar(codigoFinal,qrPix,file);
   atualizarEtapa(5,'Análise recebida. Validando e organizando os campos identificados...',92);
-  mostrarTextoOCR(data.textoCompleto||data.textoReconhecido||texto||(erroOCR?'A imagem foi enviada à NVIDIA; o OCR local não conseguiu extrair texto.':''));
+  mostrarTextoOCR('Extração restrita: código de barras/linha digitável, QR Pix, valor, vencimento, multa, juros e desconto.');
   mostrar(data);
   atualizarEtapa(5,'Leitura concluída. Confira os campos identificados abaixo.',100);
   painel.classList.add('oculto');
@@ -211,7 +203,7 @@ document.getElementById('abrirCamera').addEventListener('click',async()=>{
    const code=digitos(result.getText());
    if(![44,47,48].includes(code.length))return;
    ultimoResultado={processando:true};cameraControls&&cameraControls.stop();
-   try{mostrar(await interpretar(code));}
+   try{mostrar(await interpretar(code,'',null));}
    catch(e){ultimoResultado=null;setStatus(e.message||'Não foi possível validar o código.');}
   });
  }catch(_){setStatus('Não foi possível acessar a câmera. Verifique a permissão ou envie uma foto.');}
