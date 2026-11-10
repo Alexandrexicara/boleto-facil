@@ -1,12 +1,12 @@
 'use strict';
 
 function somenteDigitos(value) {
-  return String(value || '').replace(/\\D/g, '');
+  return String(value || '').replace(/\D/g, '');
 }
 
 function validarCNPJ(value) {
   const cnpj = somenteDigitos(value);
-  if (!/^\\d{14}$/.test(cnpj) || /^(\\d)\\1{13}$/.test(cnpj)) return false;
+  if (!/^\d{14}$/.test(cnpj) || /^(\d)\1{13}$/.test(cnpj)) return false;
   const calcular = (base, pesos) => {
     const soma = base.split('').reduce((total, digito, i) => total + Number(digito) * pesos[i], 0);
     const resto = soma % 11;
@@ -19,8 +19,8 @@ function validarCNPJ(value) {
 
 function normalizarNome(value) {
   return String(value || '')
-    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
-    .toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\\s+/g, ' ').trim();
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function compararBeneficiarios(beneficiario, beneficiarioFinal) {
