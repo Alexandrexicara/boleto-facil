@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const apiBase='https://boleto-facil-nmbd.onrender.com/api/boleto';
-const fotoInput=document.getElementById('foto'),statusEl=document.getElementById('status'),preview=document.getElementById('preview'),resultado=document.getElementById('resultado'),dadosEl=document.getElementById('dadosBoleto'),painelCamera=document.getElementById('painelCamera'),video=document.getElementById('videoCamera');
+const fotoInput=document.getElementById('foto'),fotoNvidiaInput=document.getElementById('fotoNvidia'),statusEl=document.getElementById('status'),preview=document.getElementById('preview'),resultado=document.getElementById('resultado'),dadosEl=document.getElementById('dadosBoleto'),painelCamera=document.getElementById('painelCamera'),video=document.getElementById('videoCamera');
 let ultimoResultado=null,cameraControls=null,previewUrl=null,processamento=null,etapaAtual=0;
 const digitos=v=>String(v||'').replace(/\D/g,'');
 const moeda=v=>v==null||v===''?null:new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v));
@@ -197,7 +197,8 @@ async function processarArquivo(file){
  }finally{frame.classList.remove('scan-frame-active');}
 }
 fotoInput.addEventListener('change',()=>processarArquivo(fotoInput.files&&fotoInput.files[0]));
-document.getElementById('testarNvidia').addEventListener('click',()=>testarNvidiaIsolado(fotoInput.files&&fotoInput.files[0]));
+document.getElementById('testarNvidia').addEventListener('click',()=>fotoNvidiaInput.click());
+fotoNvidiaInput.addEventListener('change',()=>testarNvidiaIsolado(fotoNvidiaInput.files&&fotoNvidiaInput.files[0]));
 document.getElementById('abrirCamera').addEventListener('click',async()=>{
  if(!window.ZXingBrowser){setStatus('Leitor da câmera indisponível. Envie uma foto para tentar a leitura.');return;}
  try{
