@@ -151,13 +151,16 @@ async function interpretarComNvidia(file) {
   const mime = file.mimetype && file.mimetype.startsWith('image/') ? file.mimetype : 'image/jpeg';
   const image = 'data:' + mime + ';base64,' + file.buffer.toString('base64');
   const prompt = [
-    'Analise a imagem de um boleto ou documento de cobrança brasileiro.',
-    'Leia visualmente o documento inteiro. Não invente nem complete dígitos ilegíveis.',
-    'Retorne SOMENTE JSON válido, sem Markdown, com as chaves: tipo_documento, texto_completo, linha_digitavel, codigo_barras, banco, beneficiario, cpf_cnpj_beneficiario, pagador, cpf_cnpj_pagador, valor, vencimento, data_emissao, nosso_numero, numero_documento, agencia_codigo_beneficiario, confianca, alertas.',
-    'Use null quando um campo não estiver legível. Datas em YYYY-MM-DD. Valor como número decimal.',
-    'Em confianca, informe valores de 0 a 1 para os campos que conseguiu ler. Em alertas, liste trechos duvidosos.',
-    'Diferencie valor nominal, valor cobrado e encargos. Não calcule juros, multa ou valor atualizado.',
-    'Copie a linha digitável e o código de barras somente quando os dígitos estiverem realmente visíveis.'
+    'Analise visualmente esta imagem de documento brasileiro de cobrança.',
+    'Identifique primeiro se é boleto bancário, conta de consumo, arrecadação ou outro documento.',
+    'Retorne SOMENTE um objeto JSON válido, sem Markdown e sem explicações.',
+    'Use exatamente estas chaves: tipo_documento, linha_digitavel, codigo_barras, banco, beneficiario, cpf_cnpj_beneficiario, pagador, cpf_cnpj_pagador, valor, vencimento, data_emissao, nosso_numero, numero_documento, agencia_codigo_beneficiario, alertas.',
+    'Não inclua transcrição integral, texto_completo, resumo longo nem campos adicionais.',
+    'Use null para campos ausentes ou ilegíveis. alertas deve ser uma lista curta.',
+    'Datas em YYYY-MM-DD e valor como número decimal.',
+    'Nunca invente dígitos. Só informe linha_digitavel ou codigo_barras se todos os dígitos estiverem visualmente legíveis.',
+    'Diferencie conta de água, luz ou gás de boleto bancário. Não invente banco para conta de consumo.',
+    'Não calcule juros, multa nem valor atualizado; informe somente valores impressos.'
   ].join(' ');
   const response = await axios.post(endpoint, {
     model,
@@ -166,7 +169,7 @@ async function interpretarComNvidia(file) {
       { type: 'text', text: prompt }
     ] }],
     temperature: 0,
-    max_tokens: 4096,
+    max_tokens: 2048,
     stream: false
   }, {
     headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
