@@ -73,6 +73,13 @@ function mostrar(d){
  d = d && typeof d === 'object' ? d : {};
  ultimoResultado=d;dadosEl.replaceChildren();
  const tipo=String(d.tipoBoleto||'').toLowerCase();
+ adicionarLinha('Beneficiário / empresa',d.beneficiario);
+ adicionarLinha('CNPJ/CPF do beneficiário',d.cnpjBeneficiario);
+ adicionarLinha('Validação matemática do CNPJ',d.cnpjBeneficiarioValido===true?'Dígitos válidos':d.cnpjBeneficiarioValido===false?'Dígitos inválidos':'Não identificado');
+ adicionarLinha('Beneficiário final',d.beneficiarioFinal);
+ adicionarLinha('CNPJ/CPF do beneficiário final',d.cnpjBeneficiarioFinal);
+ adicionarLinha('Banco emissor (lido no documento)',d.bancoEmissor);
+ adicionarLinha('Pagador (não confundir com beneficiário)',d.pagador);
  adicionarLinha('Tipo de documento',tipo==='arrecadacao'?'Arrecadação / convênio':tipo==='bancario'?'Boleto bancário':d.tipoBoleto);
 
  adicionarLinha('Valor original',moeda(d.valorOriginal));
@@ -89,6 +96,18 @@ function mostrar(d){
  adicionarLinha('QR Code Pix (copia e cola)',d.qrCodePix);
  adicionarLinha('Confiança da leitura (NVIDIA)',d.confianca?JSON.stringify(d.confianca):null);
  adicionarLinha('Alertas da leitura',Array.isArray(d.alertas)&&d.alertas.length?d.alertas.join(' | '):null);
+ const fraude=d.verificacaoAutenticidade||{};
+ const painelFraude=document.getElementById('verificacaoFraude');
+ if(painelFraude){
+  painelFraude.className='verificacao-fraude '+(fraude.status==='suspeita_de_divergencia'?'fraude-alerta':'fraude-inconclusiva');
+  const titulo=painelFraude.querySelector('strong');
+  const texto=painelFraude.querySelector('p');
+  const lista=painelFraude.querySelector('ul');
+  titulo.textContent=fraude.titulo||'Autenticidade ainda não confirmada';
+  texto.textContent=fraude.orientacao||'A leitura do documento não substitui a consulta ao banco.';
+  lista.replaceChildren();
+  [...(fraude.divergencias||[]),...(fraude.alertas||[])].forEach(item=>{const li=document.createElement('li');li.textContent=item;lista.appendChild(li);});
+ }
  // Não exibir transcrição geral: o sistema guarda somente os campos de pagamento.
  adicionarLinha('Situação do pagamento','Não pago — a leitura não efetua nem confirma pagamento');
  resultado.classList.remove('oculto');
