@@ -178,7 +178,7 @@ async function interpretarComNvidia(file, modoDiagnostico = false) {
     ] }],
     temperature: 0,
     max_tokens: maxTokensSolicitados,
-    reasoning_effort: 'low',
+    reasoning_effort: 'none',
     stream: false
   };
   let response = await axios.post(endpoint, payload, requestConfig);
