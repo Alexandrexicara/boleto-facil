@@ -86,6 +86,7 @@ function dataBR(v){
  return m?m[3]+'/'+m[2]+'/'+m[1]:v;
 }
 function mostrar(d){
+ d = d && typeof d === 'object' ? d : {};
  ultimoResultado=d;dadosEl.replaceChildren();
  const tipo=String(d.tipoBoleto||'').toLowerCase();
  adicionarLinha('Tipo de documento',tipo==='arrecadacao'?'Arrecadação / convênio':tipo==='bancario'?'Boleto bancário':d.tipoBoleto);
@@ -94,7 +95,7 @@ function mostrar(d){
  adicionarLinha('CPF/CNPJ do beneficiário',d.cpfCnpjBeneficiario);
  adicionarLinha('Pagador',d.pagador);
  adicionarLinha('CPF/CNPJ do pagador',d.cpfCnpjPagador);
- adicionarLinha('Banco emissor (código COMPE)',d.banco==null?null:(typeof d.banco==='object'?(d.banco.codigo??d.banco.nome??JSON.stringify(d.banco)):d.banco));
+ adicionarLinha('Banco emissor (código COMPE)',typeof d.banco==='string'||typeof d.banco==='number'?String(d.banco):(d.banco&&typeof d.banco==='object'?JSON.stringify(d.banco):null));
  adicionarLinha('Valor original / nominal',moeda(d.valorOriginal));
  adicionarLinha('Valor impresso reconhecido pelo OCR',moeda(d.valorLidoOCR));
  adicionarLinha('Data de vencimento',dataBR(d.dataVencimento||d.vencimentoLidoOCR));
@@ -150,8 +151,9 @@ async function processarArquivo(file){
   painel.classList.add('oculto');
   resultado.scrollIntoView({behavior:'smooth',block:'start'});
  }catch(e){
+  console.error('[Boleto Fácil] Falha na etapa de leitura:',{etapa:etapaAtual,mensagem:e&&e.message,stack:e&&e.stack});
   const erro=painel.querySelector('#processamentoErro');
-  erro.textContent=e.message||'Não foi possível concluir a leitura.';
+  erro.textContent=(e&&e.message?e.message:'Não foi possível concluir a leitura.')+' (etapa '+etapaAtual+')';
   erro.hidden=false;
   painel.querySelector('#fecharProcessamento').hidden=false;
   painel.querySelector('#processamentoMensagem').textContent='A leitura foi interrompida. Veja o motivo abaixo.';
