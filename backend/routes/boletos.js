@@ -294,8 +294,6 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
       }
     }
     if (codigoIdentificado.length === 48) tipoBoleto = 'arrecadacao';
-    const beneficiario = textoSeguro((dadosIA && dadosIA.beneficiario) || camposOCR.beneficiario);
-    const cpfCnpj = textoSeguro((dadosIA && (dadosIA.cpf_cnpj_beneficiario || dadosIA.cpfCnpjBeneficiario)) || camposOCR.cpfCnpjBeneficiario);
     const valorIA = dadosIA ? valorNumerico(dadosIA.valor_original) : null;
     const valorOriginal = dadosCodigo ? dadosCodigo.valor : valorIA;
     const vencimentoIA = dadosIA ? normalizarData(dadosIA.vencimento) : null;
@@ -310,17 +308,10 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
     // O cálculo é uma etapa posterior. Não somar encargos presumidos nesta leitura inicial.
     const calculo = { dias: null, juros: null, multa: null, taxa: null, total: null,
       calculoEstimado: false, aviso: 'Dados extraídos. O recálculo será executado em uma etapa posterior, após validar as regras do beneficiário.' };
-    const pagador = dadosIA ? textoSeguro(dadosIA.pagador) : null;
-    const cpfCnpjPagador = dadosIA ? textoSeguro(dadosIA.cpf_cnpj_pagador || dadosIA.cpfCnpjPagador) : null;
-    const dataEmissao = dadosIA ? normalizarData(dadosIA.data_emissao) : null;
-    const nossoNumero = dadosIA ? textoSeguro(dadosIA.nosso_numero) : null;
-    const numeroDocumento = dadosIA ? textoSeguro(dadosIA.numero_documento) : null;
-    const agenciaCodigoBeneficiario = dadosIA ? textoSeguro(dadosIA.agencia_codigo_beneficiario) : null;
-    const alertas = dadosIA && Array.isArray(dadosIA.alertas) ? dadosIA.alertas.map(v => String(v)).slice(0, 20) : [];
     if (!file && !textoOCR && !codigoIdentificado) {
       return res.status(400).json({ erro: 'Envie a foto do boleto ou informe a linha digitável.' });
     }
-    const statusLeitura = codigoValidado || beneficiario || valorOriginal !== null || dataVencimento ? 'dados_identificados' : 'leitura_parcial';
+    const statusLeitura = codigoValidado || qrCodePix || valorOriginal !== null || dataVencimento ? 'dados_identificados' : 'leitura_parcial';
     const motorLeitura = dadosIA ? 'NVIDIA Vision + validação local' : 'OCR local / leitura de código';
     const idLeitura = await registrarLeitura({
       tipo: tipoBoleto, status: statusLeitura, origem: file ? 'imagem' : 'camera_ou_codigo',
@@ -330,8 +321,7 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
       sucesso: true, idLeitura, statusLeitura,
       motorLeitura,
       diagnosticoIA,
-      tipoBoleto, banco, beneficiario, cpfCnpjBeneficiario: cpfCnpj, pagador, cpfCnpjPagador,
-      valorOriginal, dataVencimento,
+      tipoBoleto, valorOriginal, dataVencimento,
       multaPercentual, multaValor, jurosPercentual, jurosValor, jurosRegra,
       descontoValor, descontoDataLimite, qrCodePix,
       diasVencidos: null, juros: null, multa: null, taxaServico: null,
@@ -353,7 +343,7 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
         desconto_data_limite: dadosIA.desconto_data_limite || null
       } : null,
       confianca: null,
-      alertas, avisoIA: erroIA ? 'A leitura NVIDIA não respondeu; foram usados os dados do OCR local. ' + erroIA : null
+      avisoIA: erroIA ? 'A leitura visual NVIDIA não respondeu. ' + erroIA : null
     });
   } catch (error) {
     console.error('Erro ao ler boleto:', error);
