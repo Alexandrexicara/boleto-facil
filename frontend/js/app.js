@@ -91,6 +91,9 @@ function mostrar(d){
  const tipo=String(d.tipoBoleto||'').toLowerCase();
  adicionarLinha('Tipo de documento',tipo==='arrecadacao'?'Arrecadação / convênio':tipo==='bancario'?'Boleto bancário':d.tipoBoleto);
  adicionarLinha('Motor de leitura',d.motorLeitura);
+ adicionarLinha('Tokens NVIDIA (entrada / saída / total)',d.diagnosticoIA?[(d.diagnosticoIA.promptTokens??'—'),(d.diagnosticoIA.completionTokens??'—'),(d.diagnosticoIA.totalTokens??'—')].join(' / '):null);
+ adicionarLinha('Limite de saída NVIDIA',d.diagnosticoIA&&d.diagnosticoIA.maxTokensFinal?d.diagnosticoIA.maxTokensFinal+' tokens':null);
+ adicionarLinha('Tentativas NVIDIA',d.diagnosticoIA&&d.diagnosticoIA.tentativas?d.diagnosticoIA.tentativas:null);
  adicionarLinha('Beneficiário / favorecido',d.beneficiario);
  adicionarLinha('CPF/CNPJ do beneficiário',d.cpfCnpjBeneficiario);
  adicionarLinha('Pagador',d.pagador);
@@ -127,7 +130,7 @@ async function testarNvidiaIsolado(file){
  painel.querySelector('#processamentoMensagem').textContent='Teste isolado: enviando a imagem diretamente para a NVIDIA. Nenhum OCR alternativo será chamado.';
  painel.querySelector('#processamentoProgresso').style.width='45%';
  painel.querySelector('#processamentoTexto').textContent='Aguardando resposta direta da NVIDIA...';
- painel.scrollIntoView({behavior:'smooth',block:'start'});
+
  setStatus('Testando a API NVIDIA diretamente, sem fallback...');
  const fd=new FormData();
  fd.append('foto',file,file.name||'documento.jpg');
@@ -167,7 +170,7 @@ async function processarArquivo(file){
  painel.querySelector('#fecharProcessamento').hidden=true;
  painel.querySelector('#processamentoFoto').src=previewUrl;
  painel.querySelector('#processamentoTexto').textContent='Aguardando início do OCR...';
- painel.scrollIntoView({behavior:'smooth',block:'start'});
+
  try{
   atualizarEtapa(1,'Imagem recebida. Preparando arquivo para leitura...',8);
   await img.decode();
@@ -185,7 +188,7 @@ async function processarArquivo(file){
   mostrar(data);
   atualizarEtapa(5,'Leitura concluída. Confira os campos identificados abaixo.',100);
   painel.classList.add('oculto');
-  resultado.scrollIntoView({behavior:'smooth',block:'start'});
+
  }catch(e){
   console.error('[Boleto Fácil] Falha na etapa de leitura:',{etapa:etapaAtual,mensagem:e&&e.message,stack:e&&e.stack});
   const erro=painel.querySelector('#processamentoErro');
