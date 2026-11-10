@@ -77,3 +77,10 @@
  .processamento-etapas li:before{left:7px}
  .processamento-leitura pre{max-height:150px;font-size:11px}
 }
+
+/* Resultado conservador da análise antifraude */
+.verificacao-fraude{margin:16px 0;padding:14px 16px;border:1px solid #d8a94b;border-radius:10px;background:#fff9e9;color:#5c4515}
+.verificacao-fraude strong{display:block;font-size:16px;margin-bottom:7px}
+.verificacao-fraude p{font-size:13px;line-height:1.5;margin:5px 0}
+.verificacao-fraude ul{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.5}
+.verificacao-fraude.fraude-alerta{border-color:#d9534f;background:#fff0ef;color:#7e2421}
