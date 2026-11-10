@@ -164,34 +164,70 @@ async function interpretarComNvidia(file, modoDiagnostico = false) {
     'Diferencie conta de água, luz ou gás de boleto bancário. Não invente banco para conta de consumo.',
     'Não calcule juros, multa nem valor atualizado; informe somente valores impressos.'
   ].join(' ');
-  const response = await axios.post(endpoint, {
+  const maxTokensSolicitados = Math.min(131072, Math.max(1024, Number.parseInt(process.env.NVIDIA_MAX_OUTPUT_TOKENS || '16384', 10) || 16384));
+  const requestConfig = {
+    headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+    timeout: 90000,
+    maxBodyLength: 20 * 1024 * 1024
+  };
+  const payload = {
     model,
     messages: [{ role: 'user', content: [
       { type: 'image_url', image_url: { url: image } },
       { type: 'text', text: prompt }
     ] }],
     temperature: 0,
-    max_tokens: 2048,
+    max_tokens: maxTokensSolicitados,
+    reasoning_effort: 'low',
     stream: false
-  }, {
-    headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-    timeout: 90000,
-    maxBodyLength: 20 * 1024 * 1024
-  });
-  const choice = response.data && response.data.choices && response.data.choices[0];
-  const message = choice && choice.message;
-  const content = message && message.content;
-  const parsed = extrairJson(content) || extrairJson(response.data && response.data.output_text);
+  };
+  let response = await axios.post(endpoint, payload, requestConfig);
+  let choice = response.data && response.data.choices && response.data.choices[0];
+  let message = choice && choice.message;
+  let content = message && message.content;
+  let parsed = extrairJson(content) || extrairJson(response.data && response.data.output_text);
+  let tentativas = 1;
+  let maxTokensFinal = maxTokensSolicitados;
+
+  // Se a NVIDIA cortar a geração por limite, repete uma única vez com orçamento maior
+  // e sem raciocínio interno extenso: a tarefa exige leitura objetiva e JSON curto.
+  if (choice && choice.finish_reason === 'length') {
+    tentativas = 2;
+    maxTokensFinal = Math.min(131072, Math.max(maxTokensSolicitados * 2, 32768));
+    response = await axios.post(endpoint, {
+      ...payload,
+      max_tokens: maxTokensFinal,
+      reasoning_effort: 'none'
+    }, requestConfig);
+    choice = response.data && response.data.choices && response.data.choices[0];
+    message = choice && choice.message;
+    content = message && message.content;
+    parsed = extrairJson(content) || extrairJson(response.data && response.data.output_text);
+  }
+  const usage = response.data && response.data.usage || null;
+  const diagnosticoBase = {
+    modelo: model,
+    httpStatus: response.status,
+    finishReason: choice && choice.finish_reason || null,
+    respostaJSONValida: Boolean(parsed),
+    duracaoMs: Date.now() - inicio,
+    maxTokensSolicitados: maxTokensSolicitados,
+    maxTokensFinal: maxTokensFinal,
+    tentativas,
+    usage,
+    promptTokens: usage ? (usage.prompt_tokens ?? usage.input_tokens ?? null) : null,
+    completionTokens: usage ? (usage.completion_tokens ?? usage.output_tokens ?? null) : null,
+    totalTokens: usage ? (usage.total_tokens ?? null) : null
+  };
   if (!parsed) {
     const preview = textoDaRespostaNvidia(content).slice(0, 500).replace(/\s+/g, ' ');
     const finish = choice && choice.finish_reason ? String(choice.finish_reason) : 'sem finish_reason';
     console.error('Resposta NVIDIA sem JSON válido:', JSON.stringify({ model, finish_reason: finish, content_type: typeof content, preview }));
     const error = new Error('A NVIDIA respondeu, mas o conteúdo não veio em JSON válido (modelo: ' + model + ', finalização: ' + finish + ').');
-    error.nvidiaDiagnostics = { modelo: model, httpStatus: response.status, finishReason: finish, respostaJSONValida: false, preview, duracaoMs: Date.now() - inicio, usage: response.data && response.data.usage || null };
+    error.nvidiaDiagnostics = { ...diagnosticoBase, finishReason: finish, respostaJSONValida: false, preview };
     throw error;
   }
-  if (modoDiagnostico) return { resultado: parsed, diagnostico: { provedor: 'NVIDIA NIM', modelo: model, httpStatus: response.status, finishReason: choice && choice.finish_reason || null, respostaJSONValida: true, duracaoMs: Date.now() - inicio, usage: response.data && response.data.usage || null } };
-  return parsed;
+  return { resultado: parsed, diagnostico: { provedor: 'NVIDIA NIM', ...diagnosticoBase } };
 }
 
 router.post('/diagnostico-nvidia', upload.single('foto'), async (req, res) => {
@@ -226,10 +262,14 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
     const received = digits(req.body && req.body.codigoBarras);
     const localOCR = String((req.body && req.body.textoOCR) || '').slice(0, 20000);
     const file = req.file || null;
-    let dadosIA = null, erroIA = null;
+    let dadosIA = null, erroIA = null, diagnosticoIA = null;
     if (file) {
-      try { dadosIA = await interpretarComNvidia(file); }
-      catch (error) {
+      try {
+        const retornoIA = await interpretarComNvidia(file);
+        dadosIA = retornoIA.resultado;
+        diagnosticoIA = retornoIA.diagnostico;
+      } catch (error) {
+        diagnosticoIA = error.nvidiaDiagnostics || null;
         erroIA = error.response ? 'NVIDIA retornou HTTP ' + error.response.status : error.message;
         console.error('Falha na leitura visual NVIDIA:', erroIA);
       }
@@ -278,6 +318,7 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
     return res.json({
       sucesso: true, idLeitura, statusLeitura,
       motorLeitura,
+      diagnosticoIA,
       tipoBoleto, banco, beneficiario, cpfCnpjBeneficiario: cpfCnpj, pagador, cpfCnpjPagador,
       valorOriginal, valorLidoOCR: camposOCR.valorImpresso, dataVencimento,
       vencimentoLidoOCR: camposOCR.vencimentoImpresso, dataEmissao, nossoNumero,
