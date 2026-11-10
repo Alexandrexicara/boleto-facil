@@ -60,10 +60,10 @@ function avaliarAutenticidade(dados = {}) {
     alertas.push('Não houve consulta ao registro bancário nem confirmação cadastral oficial do beneficiário.');
   }
 
-  const suspeita = divergencias.length > 0 || nomeComparacao === 'divergente';
+  const requerConferencia = divergencias.length > 0 || nomeComparacao === 'divergente' || (cnpj && cnpjFinal && cnpj !== cnpjFinal);
   return {
-    status: suspeita ? 'suspeita_de_divergencia' : 'inconclusivo',
-    titulo: suspeita ? 'Divergência encontrada — não pague antes de conferir' : 'Autenticidade ainda não confirmada',
+    status: requerConferencia ? 'atencao' : 'inconclusivo',
+    titulo: requerConferencia ? 'Atenção: confira os dados antes de pagar' : 'Autenticidade ainda não confirmada',
     cnpjIdentificado: cnpjInformado,
     cnpjValido,
     cnpjFinalValido,
