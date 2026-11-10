@@ -13,8 +13,8 @@ function criarPainelProcessamento(){
  processamento.className='boleto-processamento oculto';
  processamento.setAttribute('role','status');
  processamento.setAttribute('aria-live','polite');
- processamento.innerHTML='<div class="processamento-cartao"><div class="processamento-topo"><span class="processamento-selo">BOLETO FÁCIL</span><span class="processamento-ponto"></span></div><h2>Leitura do boleto em andamento</h2><p id="processamentoMensagem">Preparando a imagem...</p><div class="processamento-barra"><span id="processamentoProgresso"></span></div><ol class="processamento-etapas"><li data-etapa="1">Imagem recebida e preparada</li><li data-etapa="2">Leitura do código de barras</li><li data-etapa="3">Reconhecimento de textos (OCR)</li><li data-etapa="4">Análise visual pela inteligência artificial</li><li data-etapa="5">Validação e organização dos dados</li></ol><div class="processamento-imagem"><img id="processamentoFoto" alt="Boleto enviado para leitura"></div><div class="processamento-leitura"><strong>Texto que já foi reconhecido</strong><pre id="processamentoTexto">Aguardando início do OCR...</pre></div><p id="processamentoErro" class="processamento-erro" hidden></p><button id="fecharProcessamento" type="button" class="secundario" hidden>Fechar</button></div>';
- document.body.append(processamento);
+ processamento.innerHTML='<div class="processamento-cartao"><div class="processamento-topo"><span class="processamento-selo">BOLETO FÁCIL</span><span class="processamento-ponto"></span></div><h2>Leitura do boleto em andamento</h2><p id="processamentoMensagem">Preparando a imagem...</p><div class="processamento-barra"><span id="processamentoProgresso"></span></div><ol class="processamento-etapas"><li data-etapa="1">Imagem recebida e preparada</li><li data-etapa="2">Leitura do código de barras</li><li data-etapa="3">Reconhecimento de textos (OCR)</li><li data-etapa="4">Análise visual pela inteligência artificial</li><li data-etapa="5">Validação e organização dos dados</li></ol><div class="processamento-leitura"><strong>Texto que já foi reconhecido</strong><pre id="processamentoTexto">Aguardando início do OCR...</pre></div><p id="processamentoErro" class="processamento-erro" hidden></p><button id="fecharProcessamento" type="button" class="secundario" hidden>Fechar</button></div>';
+ preview.insertAdjacentElement('afterend',processamento);
  processamento.querySelector('#fecharProcessamento').addEventListener('click',()=>processamento.classList.add('oculto'));
  return processamento;
 }
@@ -126,7 +126,6 @@ async function testarNvidiaIsolado(file){
  painel.classList.remove('oculto');
  painel.querySelector('#processamentoErro').hidden=true;
  painel.querySelector('#fecharProcessamento').hidden=true;
- painel.querySelector('#processamentoFoto').src=URL.createObjectURL(file);
  painel.querySelector('#processamentoMensagem').textContent='Teste isolado: enviando a imagem diretamente para a NVIDIA. Nenhum OCR alternativo será chamado.';
  painel.querySelector('#processamentoProgresso').style.width='45%';
  painel.querySelector('#processamentoTexto').textContent='Aguardando resposta direta da NVIDIA...';
@@ -168,7 +167,6 @@ async function processarArquivo(file){
  painel.classList.remove('oculto');
  painel.querySelector('#processamentoErro').hidden=true;
  painel.querySelector('#fecharProcessamento').hidden=true;
- painel.querySelector('#processamentoFoto').src=previewUrl;
  painel.querySelector('#processamentoTexto').textContent='Aguardando início do OCR...';
 
  try{
