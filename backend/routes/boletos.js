@@ -143,9 +143,11 @@ function classificarDocumento(dadosIA, texto) {
   if (/boleto|linha digitável|linha digitavel|beneficiário|beneficiario|cedente/.test(t)) return 'boleto_bancario';
   return informado || 'não identificado';
 }
-async function interpretarComNvidia(file) {
+async function interpretarComNvidia(file, modoDiagnostico = false) {
+  const inicio = Date.now();
   const key = process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY || process.env.NGC_API_KEY;
-  if (!key || !file) return null;
+  if (!key) { if (modoDiagnostico) throw new Error('NVIDIA_API_KEY não está configurada no Render.'); return null; }
+  if (!file) { if (modoDiagnostico) throw new Error('Nenhuma imagem foi recebida para o teste.'); return null; }
   const model = process.env.NVIDIA_VISION_MODEL || 'nvidia/nemotron-3.5-super-vl-120b-a12b';
   const endpoint = process.env.NVIDIA_API_URL || 'https://integrate.api.nvidia.com/v1/chat/completions';
   const mime = file.mimetype && file.mimetype.startsWith('image/') ? file.mimetype : 'image/jpeg';
@@ -184,10 +186,29 @@ async function interpretarComNvidia(file) {
     const preview = textoDaRespostaNvidia(content).slice(0, 500).replace(/\s+/g, ' ');
     const finish = choice && choice.finish_reason ? String(choice.finish_reason) : 'sem finish_reason';
     console.error('Resposta NVIDIA sem JSON válido:', JSON.stringify({ model, finish_reason: finish, content_type: typeof content, preview }));
-    throw new Error('A NVIDIA respondeu, mas o conteúdo não veio em JSON válido (modelo: ' + model + ', finalização: ' + finish + ').');
+    const error = new Error('A NVIDIA respondeu, mas o conteúdo não veio em JSON válido (modelo: ' + model + ', finalização: ' + finish + ').');
+    error.nvidiaDiagnostics = { modelo: model, httpStatus: response.status, finishReason: finish, respostaJSONValida: false, preview, duracaoMs: Date.now() - inicio, usage: response.data && response.data.usage || null };
+    throw error;
   }
+  if (modoDiagnostico) return { resultado: parsed, diagnostico: { provedor: 'NVIDIA NIM', modelo: model, httpStatus: response.status, finishReason: choice && choice.finish_reason || null, respostaJSONValida: true, duracaoMs: Date.now() - inicio, usage: response.data && response.data.usage || null } };
   return parsed;
 }
+
+router.post('/diagnostico-nvidia', upload.single('foto'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ sucesso: false, etapa: 'recepcao_imagem', erro: 'Envie uma imagem no campo foto.' });
+  try {
+    const teste = await interpretarComNvidia(req.file, true);
+    return res.json({ sucesso: true, fallbackExecutado: false, gravacaoNeon: false, diagnostico: teste.diagnostico, resultado: teste.resultado });
+  } catch (error) {
+    const providerStatus = error.response && error.response.status || null;
+    const providerData = error.response && error.response.data;
+    const providerMessage = providerData && providerData.error && (providerData.error.message || providerData.error) || providerData && providerData.message || null;
+    const diagnostico = error.nvidiaDiagnostics || { provedor: 'NVIDIA NIM', httpStatus: providerStatus, codigoErro: error.code || null, duracaoMs: null };
+    console.error('Diagnóstico isolado NVIDIA falhou:', JSON.stringify({ ...diagnostico, erro: error.message }));
+    return res.status(502).json({ sucesso: false, fallbackExecutado: false, gravacaoNeon: false, diagnostico, erro: error.message, erroProvedor: typeof providerMessage === 'string' ? providerMessage.slice(0, 500) : null });
+  }
+});
+
 function valorNumerico(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value !== 'string') return null;
