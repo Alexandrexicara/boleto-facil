@@ -79,6 +79,7 @@ function mostrar(d){
  adicionarLinha('Beneficiário final',d.beneficiarioFinal);
  adicionarLinha('CNPJ/CPF do beneficiário final',d.cnpjBeneficiarioFinal);
  adicionarLinha('Banco emissor (lido no documento)',d.bancoEmissor);
+ adicionarLinha('Código COMPE do banco (código de barras)',d.codigoBanco);
  adicionarLinha('Pagador (não confundir com beneficiário)',d.pagador);
  adicionarLinha('Tipo de documento',tipo==='arrecadacao'?'Arrecadação / convênio':tipo==='bancario'?'Boleto bancário':d.tipoBoleto);
 
@@ -99,7 +100,7 @@ function mostrar(d){
  const fraude=d.verificacaoAutenticidade||{};
  const painelFraude=document.getElementById('verificacaoFraude');
  if(painelFraude){
-  painelFraude.className='verificacao-fraude '+(fraude.status==='suspeita_de_divergencia'?'fraude-alerta':'fraude-inconclusiva');
+  painelFraude.className='verificacao-fraude '+(fraude.status==='atencao'?'fraude-alerta':'fraude-inconclusiva');
   const titulo=painelFraude.querySelector('strong');
   const texto=painelFraude.querySelector('p');
   const lista=painelFraude.querySelector('ul');
