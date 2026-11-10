@@ -117,6 +117,42 @@ function mostrar(d){
  resultado.classList.remove('oculto');
  setStatus(d.avisoIA||d.avisoCalculo||'Leitura concluída. Confira os dados identificados.');
 }
+async function testarNvidiaIsolado(file){
+ if(!file||!file.type.startsWith('image/')){setStatus('Escolha primeiro a foto da conta ou boleto.');return;}
+ const painel=criarPainelProcessamento();
+ painel.classList.remove('oculto');
+ painel.querySelector('#processamentoErro').hidden=true;
+ painel.querySelector('#fecharProcessamento').hidden=true;
+ painel.querySelector('#processamentoFoto').src=URL.createObjectURL(file);
+ painel.querySelector('#processamentoMensagem').textContent='Teste isolado: enviando a imagem diretamente para a NVIDIA. Nenhum OCR alternativo será chamado.';
+ painel.querySelector('#processamentoProgresso').style.width='45%';
+ painel.querySelector('#processamentoTexto').textContent='Aguardando resposta direta da NVIDIA...';
+ painel.scrollIntoView({behavior:'smooth',block:'start'});
+ setStatus('Testando a API NVIDIA diretamente, sem fallback...');
+ const fd=new FormData();
+ fd.append('foto',file,file.name||'documento.jpg');
+ try{
+  const response=await fetch(apiBase+'/diagnostico-nvidia',{method:'POST',body:fd});
+  const data=await response.json().catch(()=>({erro:'O servidor retornou uma resposta que não é JSON.'}));
+  mostrarTextoOCR(JSON.stringify(data,null,2));
+  const erro=painel.querySelector('#processamentoErro');
+  erro.textContent=data.sucesso
+   ? 'TESTE NVIDIA APROVADO: a API respondeu e devolveu JSON válido. Nenhum OCR alternativo foi executado.'
+   : 'TESTE NVIDIA FALHOU: '+(data.erro||'erro sem descrição')+'. Nenhum OCR alternativo foi executado.';
+  erro.hidden=false;
+  painel.querySelector('#fecharProcessamento').hidden=false;
+  painel.querySelector('#processamentoMensagem').textContent=data.sucesso?'A NVIDIA respondeu diretamente. Confira o diagnóstico e os campos abaixo.':'A falha ocorreu no teste direto da NVIDIA. Confira o diagnóstico técnico abaixo.';
+  painel.querySelector('#processamentoProgresso').style.width=data.sucesso?'100%':'0%';
+  setStatus(data.sucesso?'NVIDIA respondeu no teste isolado.':'A NVIDIA falhou no teste isolado.');
+ }catch(error){
+  const erro=painel.querySelector('#processamentoErro');
+  erro.textContent='Não foi possível alcançar o endpoint de diagnóstico no Render: '+(error.message||'erro de conexão');
+  erro.hidden=false;
+  painel.querySelector('#fecharProcessamento').hidden=false;
+  painel.querySelector('#processamentoMensagem').textContent='Falha de conexão com o endpoint de diagnóstico.';
+  setStatus('Não foi possível conectar ao diagnóstico NVIDIA.');
+ }
+}
 async function processarArquivo(file){
  if(!file||!file.type.startsWith('image/')){setStatus('Selecione uma imagem válida.');return;}
  resultado.classList.add('oculto');ultimoResultado=null;etapaAtual=0;
@@ -161,6 +197,7 @@ async function processarArquivo(file){
  }finally{frame.classList.remove('scan-frame-active');}
 }
 fotoInput.addEventListener('change',()=>processarArquivo(fotoInput.files&&fotoInput.files[0]));
+document.getElementById('testarNvidia').addEventListener('click',()=>testarNvidiaIsolado(fotoInput.files&&fotoInput.files[0]));
 document.getElementById('abrirCamera').addEventListener('click',async()=>{
  if(!window.ZXingBrowser){setStatus('Leitor da câmera indisponível. Envie uma foto para tentar a leitura.');return;}
  try{
