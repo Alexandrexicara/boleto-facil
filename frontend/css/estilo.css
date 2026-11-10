@@ -30,33 +30,50 @@
 @media(max-width:560px){.boleto-processamento{padding:8px}.processamento-cartao{padding:15px;margin:4px auto}.processamento-etapas li{font-size:13px}}
 
 
-/* Painel de processamento compacto no rodapé: não bloqueia nem escurece a página. */
+/* Acompanhamento da leitura fica no fluxo do index, logo abaixo da foto principal. */
 .boleto-processamento{
- position:fixed; inset:auto 0 0; z-index:9999; max-height:42vh; overflow-y:auto;
- background:transparent; padding:8px 10px; display:flex; align-items:flex-end;
- justify-content:center; pointer-events:none;
+ position:relative;
+ inset:auto;
+ z-index:1;
+ display:block;
+ width:100%;
+ max-height:none;
+ overflow:visible;
+ margin:12px auto 18px;
+ padding:0;
+ background:transparent;
+ pointer-events:auto;
 }
 .boleto-processamento.oculto{display:none!important}
 .processamento-cartao{
- pointer-events:auto; width:min(720px,100%); max-height:calc(42vh - 16px);
- overflow-y:auto; margin:0 auto; padding:12px 16px;
- border:1px solid #dce6ed; box-shadow:0 4px 24px #102b4630;
+ width:100%;
+ max-height:none;
+ overflow:visible;
+ margin:0;
+ padding:16px;
+ border:1px solid #dce6ed;
+ border-radius:12px;
+ background:#fff;
+ box-shadow:0 4px 18px #102b4612;
 }
-.processamento-topo{padding-bottom:7px}
-.processamento-cartao h2{font-size:16px;margin:8px 0 4px}
-.processamento-cartao>p{font-size:12px;line-height:1.35;margin:5px 0 8px}
-.processamento-barra{margin:8px 0 10px;height:6px}
-.processamento-etapas{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
-.processamento-etapas li{font-size:11px;padding:6px 7px 6px 25px}
-.processamento-etapas li:before{left:8px}
-.processamento-imagem{display:none}
-.processamento-leitura pre{max-height:72px;font-size:11px;padding:8px}
-.processamento-erro{font-size:12px;padding:8px;margin:7px 0}
-#fecharProcessamento{min-height:38px;padding:8px;margin-top:6px}
+.processamento-cartao h2{font-size:17px;margin:8px 0}
+.processamento-cartao>p{font-size:13px;line-height:1.45;margin:7px 0 10px}
+.processamento-barra{margin:10px 0 12px;height:7px}
+.processamento-etapas{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.processamento-etapas li{font-size:12px;padding:7px 8px 7px 27px}
+.processamento-etapas li:before{left:9px}
+.processamento-leitura pre{max-height:180px;font-size:12px;padding:9px}
+.processamento-erro{font-size:13px;padding:9px;margin:8px 0}
+#fecharProcessamento{min-height:40px;padding:9px;margin-top:8px}
+/* A foto principal é única; o feixe percorre a própria imagem em movimento contínuo. */
+.scan-frame{position:relative;isolation:isolate}
+.scan-laser{height:4px;opacity:0;will-change:top;z-index:2}
+.scan-frame-active .scan-laser{opacity:1;animation:boletoLaser 2.8s ease-in-out infinite alternate}
+@keyframes boletoLaser{from{top:1%}to{top:98%}}
 @media(max-width:560px){
- .boleto-processamento{max-height:45vh;padding:6px}
- .processamento-cartao{max-height:calc(45vh - 12px);padding:10px 12px}
- .processamento-etapas{grid-template-columns:1fr 1fr;gap:4px}
- .processamento-etapas li{font-size:10px;padding:5px 5px 5px 22px}
+ .processamento-cartao{padding:12px}
+ .processamento-etapas{grid-template-columns:1fr 1fr;gap:5px}
+ .processamento-etapas li{font-size:11px;padding:6px 6px 6px 23px}
  .processamento-etapas li:before{left:7px}
+ .processamento-leitura pre{max-height:150px;font-size:11px}
 }
