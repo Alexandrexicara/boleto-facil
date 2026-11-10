@@ -13,7 +13,7 @@ function criarPainelProcessamento(){
  processamento.className='boleto-processamento oculto';
  processamento.setAttribute('role','status');
  processamento.setAttribute('aria-live','polite');
- processamento.innerHTML='<div class="processamento-cartao"><div class="processamento-topo"><span class="processamento-selo">BOLETO FÁCIL</span><span class="processamento-ponto"></span></div><h2>Leitura do boleto em andamento</h2><p id="processamentoMensagem">Preparando a imagem...</p><div class="processamento-barra"><span id="processamentoProgresso"></span></div><ol class="processamento-etapas"><li data-etapa="1">Imagem recebida e preparada</li><li data-etapa="2">Leitura do código de barras</li><li data-etapa="3">Reconhecimento de textos (OCR)</li><li data-etapa="4">Análise visual pela inteligência artificial</li><li data-etapa="5">Validação e organização dos dados</li></ol><div class="processamento-leitura"><strong>Texto que já foi reconhecido</strong><pre id="processamentoTexto">Aguardando início do OCR...</pre></div><p id="processamentoErro" class="processamento-erro" hidden></p><button id="fecharProcessamento" type="button" class="secundario" hidden>Fechar</button></div>';
+ processamento.innerHTML='<div class="processamento-cartao"><div class="processamento-topo"><span class="processamento-selo">BOLETO FÁCIL</span><span class="processamento-ponto"></span></div><h2>Leitura do boleto em andamento</h2><p id="processamentoMensagem">Preparando a imagem...</p><div class="processamento-barra"><span id="processamentoProgresso"></span></div><ol class="processamento-etapas"><li data-etapa="1">Imagem recebida e preparada</li><li data-etapa="2">Leitura do código de barras</li><li data-etapa="3">Extração dos campos financeiros</li><li data-etapa="4">Leitura restrita dos dados de pagamento</li><li data-etapa="5">Validação dos códigos e valores</li></ol><div class="processamento-leitura"><strong>Dados de pagamento identificados</strong><pre id="processamentoTexto">Aguardando início do OCR...</pre></div><p id="processamentoErro" class="processamento-erro" hidden></p><button id="fecharProcessamento" type="button" class="secundario" hidden>Fechar</button></div>';
  preview.insertAdjacentElement('afterend',processamento);
  processamento.querySelector('#fecharProcessamento').addEventListener('click',()=>processamento.classList.add('oculto'));
  return processamento;
@@ -46,7 +46,7 @@ async function reconhecerTexto(file){
  const r=await window.Tesseract.recognize(file,'por+eng',{logger:m=>{
   if(!m||!m.status)return;
   const pct=Number.isFinite(m.progress)?Math.round(m.progress*100):0;
-  const mensagens={'loading tesseract core':'Carregando mecanismo de leitura...', 'initializing tesseract':'Inicializando OCR...', 'loading language traineddata':'Carregando idioma português...', 'initializing api':'Preparando leitura da imagem...', 'recognizing text':'Reconhecendo os textos impressos no boleto...'};
+  const mensagens={'loading tesseract core':'Carregando mecanismo de leitura...', 'initializing tesseract':'Inicializando OCR...', 'loading language traineddata':'Carregando idioma português...', 'initializing api':'Preparando leitura da imagem...', 'recognizing text':'Identificando somente os campos de pagamento...'};
   const msg=mensagens[m.status]||'Reconhecendo os textos impressos no boleto...';
   atualizarEtapa(3,msg,25+Math.round(pct*.35));
  }});
@@ -93,10 +93,7 @@ function mostrar(d){
  ultimoResultado=d;dadosEl.replaceChildren();
  const tipo=String(d.tipoBoleto||'').toLowerCase();
  adicionarLinha('Tipo de documento',tipo==='arrecadacao'?'Arrecadação / convênio':tipo==='bancario'?'Boleto bancário':d.tipoBoleto);
- adicionarLinha('Motor de leitura',d.motorLeitura);
- adicionarLinha('Tokens NVIDIA (entrada / saída / total)',d.diagnosticoIA?[(d.diagnosticoIA.promptTokens??'—'),(d.diagnosticoIA.completionTokens??'—'),(d.diagnosticoIA.totalTokens??'—')].join(' / '):null);
- adicionarLinha('Limite de saída NVIDIA',d.diagnosticoIA&&d.diagnosticoIA.maxTokensFinal?d.diagnosticoIA.maxTokensFinal+' tokens':null);
- adicionarLinha('Tentativas NVIDIA',d.diagnosticoIA&&d.diagnosticoIA.tentativas?d.diagnosticoIA.tentativas:null);
+
  adicionarLinha('Valor original',moeda(d.valorOriginal));
  adicionarLinha('Data de vencimento',dataBR(d.dataVencimento));
  adicionarLinha('Multa (%)',d.multaPercentual==null?null:d.multaPercentual+'%');
@@ -174,7 +171,7 @@ async function processarArquivo(file){
   atualizarEtapa(4,'Enviando a imagem para extrair somente os dados de pagamento...',65);
   const data=await interpretar(codigoFinal,qrPix,file);
   atualizarEtapa(5,'Análise recebida. Validando e organizando os campos identificados...',92);
-  mostrarTextoOCR('Extração restrita: código de barras/linha digitável, QR Pix, valor, vencimento, multa, juros e desconto.');
+  mostrarTextoOCR('A leitura foi limitada aos códigos de pagamento e aos campos de valor, vencimento, multa, juros e desconto.');
   mostrar(data);
   atualizarEtapa(5,'Leitura concluída. Confira os campos identificados abaixo.',100);
   painel.classList.add('oculto');
