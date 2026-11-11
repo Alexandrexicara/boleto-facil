@@ -4,6 +4,7 @@ const multer = require('multer');
 const axios = require('axios');
 const { registrarLeitura } = require('../config/database');
 const { avaliarAutenticidade, validarCNPJ } = require('../services/antifraude');
+const { calcularAtualizacao } = require('../services/calculo-boleto');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 const DAY = 86400000;
 const LEGACY_BASE = Date.UTC(1997, 9, 7);
@@ -313,9 +314,19 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
     const jurosRegra = dadosIA ? textoSeguro(dadosIA.juros_regra) : null;
     const descontoValor = dadosIA ? valorNumerico(dadosIA.desconto_valor) : null;
     const descontoDataLimite = dadosIA ? normalizarData(dadosIA.desconto_data_limite) : null;
-    // O cálculo é uma etapa posterior. Não somar encargos presumidos nesta leitura inicial.
-    const calculo = { dias: null, juros: null, multa: null, taxa: null, total: null,
-      calculoEstimado: false, aviso: 'Dados extraídos. O recálculo será executado em uma etapa posterior, após validar as regras do beneficiário.' };
+    // Recalcula apenas com regras explícitas identificadas no próprio boleto.
+    // Se a periodicidade dos juros ou a multa não estiver clara, não inventa um total.
+    const calculo = calcularAtualizacao({
+      valorOriginal,
+      dataVencimento: dataVencimento,
+      multaPercentual,
+      multaValor,
+      jurosPercentual,
+      jurosValor,
+      jurosRegra,
+      descontoValor,
+      descontoDataLimite
+    });
     if (!file && !textoOCR && !codigoIdentificado) {
       return res.status(400).json({ erro: 'Envie a foto do boleto ou informe a linha digitável.' });
     }
@@ -342,8 +353,22 @@ router.post('/ler', upload.single('foto'), async (req, res) => {
       verificacaoAutenticidade,
       multaPercentual, multaValor, jurosPercentual, jurosValor, jurosRegra,
       descontoValor, descontoDataLimite, qrCodePix,
-      diasVencidos: null, juros: null, multa: null, taxaServico: null,
-      valorFinal: null, calculoEstimado: false, avisoCalculo: calculo.aviso,
+      dataReferenciaCalculo: calculo.dataReferencia,
+      statusVencimento: calculo.statusVencimento,
+      diasVencidos: calculo.diasVencidos,
+      juros: calculo.juros,
+      multa: calculo.multa,
+      descontoAplicado: calculo.desconto,
+      taxaServico: null,
+      valorFinal: calculo.valorFinal,
+      calculoEstimado: calculo.calculoEstimado,
+      calculoCompleto: calculo.calculoCompleto,
+      avisoCalculo: calculo.aviso,
+      situacaoPagamento: { status: 'nao_consultado', confirmado: false, fonte: null,
+        aviso: 'A leitura e o cálculo local não consultam o registro bancário. O pagamento, a baixa e a liquidação ainda precisam ser confirmados por uma instituição ou provedor autorizado.' },
+      situacaoRegistro: { status: 'nao_consultado', confirmado: false, fonte: null },
+      pagabilidade: { status: 'nao_confirmada', confirmado: false,
+        aviso: 'Somente o banco pagador ou uma consulta oficial de registro pode confirmar se este boleto está apto a pagamento.' },
       codigoRecebido: codigoIdentificado || null, codigoValidado, codigoBanco: dadosCodigo ? dadosCodigo.banco : null, pagamentoHabilitado: false,
       textoReconhecido: null, textoCompleto: null,
       camposIA: dadosIA ? {
