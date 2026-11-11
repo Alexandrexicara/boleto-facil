@@ -100,7 +100,7 @@ function mostrar(d){
  adicionarLinha('Juros calculados (R$)',moeda(d.juros));
  adicionarLinha('Multa calculada (R$)',moeda(d.multa));
  adicionarLinha('Valor atualizado estimado',moeda(d.valorFinal));
- adicionarLinha('Cálculo completo',d.calculoCompleto===true?'Sim, com regras identificadas':d.calculoCompleto===false?'Não; faltam regras confiáveis':'Não realizado');
+ adicionarLinha('Cálculo completo',d.calculoCompleto===true?(d.statusVencimento==='vencido'?'Sim, com regras identificadas':'Valor nominal; sem atraso'):d.calculoCompleto===false?'Não; faltam regras confiáveis':'Não realizado');
  adicionarLinha('Situação bancária do boleto',d.situacaoPagamento&&d.situacaoPagamento.status==='confirmado'?'Confirmada pela fonte informada':'Ainda não consultada em fonte bancária');
  adicionarLinha('Registro bancário',d.situacaoRegistro&&d.situacaoRegistro.status==='confirmado'?'Confirmado pela fonte informada':'Ainda não consultado');
  adicionarLinha('Pode pagar no banco?',d.pagabilidade&&d.pagabilidade.confirmado?(d.pagabilidade.status==='pagavel'?'Confirmado como pagável':'Confirmado como não pagável'):'Não confirmado pelo banco');
