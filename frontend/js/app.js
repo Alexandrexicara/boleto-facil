@@ -85,13 +85,25 @@ function mostrar(d){
 
  adicionarLinha('Valor original',moeda(d.valorOriginal));
  adicionarLinha('Data de vencimento',dataBR(d.dataVencimento));
+ const statusVencimento={a_vencer:'A vencer',vence_hoje:'Vence hoje',vencido:'Vencido',nao_identificado:'Não identificado'};
+ adicionarLinha('Situação do vencimento',statusVencimento[d.statusVencimento]||'Não consultada');
+ adicionarLinha('Dias em atraso',d.diasVencidos==null?null:d.diasVencidos);
+ adicionarLinha('Data de referência do cálculo',dataBR(d.dataReferenciaCalculo));
  adicionarLinha('Multa (%)',d.multaPercentual==null?null:d.multaPercentual+'%');
  adicionarLinha('Multa (R$)',moeda(d.multaValor));
  adicionarLinha('Juros (%)',d.jurosPercentual==null?null:d.jurosPercentual+'%');
  adicionarLinha('Juros (R$)',moeda(d.jurosValor));
  adicionarLinha('Regra de juros impressa',d.jurosRegra);
- adicionarLinha('Desconto (R$)',moeda(d.descontoValor));
+ adicionarLinha('Desconto impresso (R$)',moeda(d.descontoValor));
+ adicionarLinha('Desconto aplicado no cálculo (R$)',moeda(d.descontoAplicado));
  adicionarLinha('Data limite do desconto',dataBR(d.descontoDataLimite));
+ adicionarLinha('Juros calculados (R$)',moeda(d.juros));
+ adicionarLinha('Multa calculada (R$)',moeda(d.multa));
+ adicionarLinha('Valor atualizado estimado',moeda(d.valorFinal));
+ adicionarLinha('Cálculo completo',d.calculoCompleto===true?'Sim, com regras identificadas':d.calculoCompleto===false?'Não; faltam regras confiáveis':'Não realizado');
+ adicionarLinha('Situação bancária do boleto',d.situacaoPagamento&&d.situacaoPagamento.status==='confirmado'?'Confirmada pela fonte informada':'Ainda não consultada em fonte bancária');
+ adicionarLinha('Registro bancário',d.situacaoRegistro&&d.situacaoRegistro.status==='confirmado'?'Confirmado pela fonte informada':'Ainda não consultado');
+ adicionarLinha('Pode pagar no banco?',d.pagabilidade&&d.pagabilidade.confirmado?(d.pagabilidade.status==='pagavel'?'Confirmado como pagável':'Confirmado como não pagável'):'Não confirmado pelo banco');
  adicionarLinha('Linha digitável / código de barras',d.codigoRecebido);
  adicionarLinha('Validação dos dígitos',d.codigoValidado?'Dígitos verificadores aprovados':'Não validado ou código não identificado');
  adicionarLinha('QR Code Pix (copia e cola)',d.qrCodePix);
@@ -110,7 +122,7 @@ function mostrar(d){
   [...(fraude.divergencias||[]),...(fraude.alertas||[])].forEach(item=>{const li=document.createElement('li');li.textContent=item;lista.appendChild(li);});
  }
  // Não exibir transcrição geral: o sistema guarda somente os campos de pagamento.
- adicionarLinha('Situação do pagamento','Não pago — a leitura não efetua nem confirma pagamento');
+ adicionarLinha('Situação do pagamento',d.situacaoPagamento&&d.situacaoPagamento.confirmado?'Status confirmado pela fonte bancária':'Não consultado — a leitura não confirma se foi pago, baixado ou liquidado');
  resultado.classList.remove('oculto');
  setStatus(d.avisoIA||d.avisoCalculo||'Leitura concluída. Confira os dados identificados.');
 }
