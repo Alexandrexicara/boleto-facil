@@ -12,7 +12,7 @@ function dataLocalHoje(now = new Date()) {
 }
 
 function dataISOValida(value) {
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(value || ''))) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return false;
   const [year, month, day] = value.split('-').map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
@@ -90,7 +90,7 @@ function calcularAtualizacao(dados = {}, now = new Date()) {
   }
 
   let juros = null;
-  const regra = String(dados.jurosRegra || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase();
+  const regra = String(dados.jurosRegra || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const jurosValor = dados.jurosValor == null ? null : Number(dados.jurosValor);
   const jurosPercentual = dados.jurosPercentual == null ? null : Number(dados.jurosPercentual);
   if (jurosValor !== null && Number.isFinite(jurosValor) && jurosValor >= 0) {
